@@ -21,7 +21,7 @@ The project is designed around a modular pipeline. All stages below are planned;
 
 ## Current State
 
-No source code has been published to this repository yet. Work in progress, not yet published here:
+The repository currently contains only project scaffolding (package layout, CLI placeholder, tests, CI). Work in progress, not yet published here:
 
 - Early scaffolding
 - Partial extraction routines
@@ -40,10 +40,27 @@ The project is not capable of producing runnable builds. It is actively unstable
 - Create a reproducible build pipeline
 - Document internal formats and memory maps
 
+## Getting Started
+
+Requires Python 3.10 or newer.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+psx-decomp-studio --version
+pytest
+```
+
+The command-line tool is a placeholder for now; pipeline stages will be added as they are implemented.
+
 ## Community Involvement
 
 The goal is to create a foundation others can extend. If you're interested in PSX reverse engineering, runtime rebuilding, or game modernization, contributions are welcome.
 
 - Open an issue to discuss ideas or report problems before starting larger changes.
-- Setup instructions will be added once the first code is published.
-- A license has not been chosen yet; until one is added, please ask in an issue before contributing code.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and ground rules (including: never commit copyrighted game data).
+
+## License
+
+[MIT](LICENSE)
