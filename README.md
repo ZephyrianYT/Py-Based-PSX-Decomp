@@ -3,6 +3,18 @@ PSX Decomp Studio (Concept / WIP)
 PSX Decomp Studio is an early‑stage Python application exploring automated decompilation and modernization of PlayStation 1 titles. The long‑term vision is a pipeline that takes a PSX disc image and outputs a structured, editable project suitable for rebuilding into a modern executable.
 
 This repository is not complete and should be treated as a prototype.
+Reference Library (`ref/`)
+
+`ref/` is a self-contained reference on how PS1 games look, how their models
+and textures are stored, and how their worlds were built. It is written for
+people and for AI agents (start with `ref/AGENTS.md` and `ref/index.json`).
+It includes runnable, dependency-free Python tools (GTE fixed-point math, a
+PS1-rules software rasteriser, TIM/TMD codecs, PS1-style world generators) and
+generated comparison images. See `ref/README.md`.
+
+    python -m ref.tools.demo --out ref_out           # render comparison images
+    python -m unittest discover -s ref/tests -t .    # run the self-tests
+
 Architecture Overview
 
 The project is built around a modular pipeline:

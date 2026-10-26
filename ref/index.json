@@ -1,0 +1,39 @@
+{
+  "name": "PSX Reference Library",
+  "version": 1,
+  "description": "Reference on PlayStation 1 look, models, formats and world building, for people and AI agents. Start with AGENTS.md.",
+  "confidence_tags": {
+    "HW": "hardware fact (psx-spx / Sony docs)",
+    "FMT": "file-format fact (Sony file format docs)",
+    "TYP": "typical practice / approximate",
+    "CASE": "publicly documented technique of a specific game",
+    "SIM": "behaviour of this repository's Python models"
+  },
+  "docs": [
+    {"path": "README.md", "title": "PSX Reference Library", "tags": ["index", "overview", "start"], "summary": "Map of the folder, tool list, scope and honesty notes."},
+    {"path": "AGENTS.md", "title": "Guide for AI agents", "tags": ["agents", "rules", "citation", "lookup"], "summary": "Lookup order, confidence tags, things not to claim, task-to-file map."},
+    {"path": "hardware/overview.md", "title": "Hardware overview", "tags": ["cpu", "memory map", "dma", "ram", "interrupts", "frame pipeline", "mips", "r3000"], "summary": "CPU without FPU, 2 MB RAM, 1 MB VRAM, memory map, I/O registers, DMA channels, how a frame is produced."},
+    {"path": "hardware/gpu.md", "title": "The PS1 GPU", "tags": ["gpu", "vram", "texture page", "tpage", "clut", "primitives", "gp0", "gp1", "semi-transparency", "blending", "dither", "mask", "resolution", "rasterisation"], "summary": "VRAM layout, 15-bit pixels, texture pages and CLUTs, command bytes and packet layout, rasterisation rules, modulation, blend modes, dither table, display modes."},
+    {"path": "hardware/gte.md", "title": "The GTE", "tags": ["gte", "cop2", "fixed point", "1.3.12", "rtps", "rtpt", "nclip", "avsz3", "projection", "lighting", "depth cue", "fog", "jitter"], "summary": "Fixed-point formats, registers, commands with opcodes, RTPS formula, back-face culling, OT depth, lighting and depth-cue fog."},
+    {"path": "look/visual-signature.md", "title": "The PS1 visual signature", "tags": ["look", "style", "aesthetic", "affine", "warping", "wobble", "jitter", "sorting", "dither", "banding", "fog", "low poly", "inspection", "checklist"], "summary": "Checklist of 16 recognisable artifacts with hardware causes, plus common misconceptions."},
+    {"path": "look/recreating-the-look.md", "title": "Recreating the PS1 look", "tags": ["shader", "glsl", "godot", "unity", "unreal", "three.js", "retro", "post-process", "vertex snapping", "noperspective"], "summary": "Ordered recipe to reproduce the look in modern engines, engine notes, asset rules."},
+    {"path": "look/images/README.md", "title": "Reference images", "tags": ["images", "comparison", "examples", "visual"], "summary": "Generated side-by-side images of affine warping, dither, jitter, sorting, fog, and world generator previews."},
+    {"path": "models/modeling-guide.md", "title": "PS1 models", "tags": ["models", "polygons", "budget", "poly count", "topology", "uv", "texture atlas", "vertex colour", "animation", "rigid", "lod", "blender"], "summary": "Data building blocks, approximate budgets, topology and texturing rules, animation techniques, LOD, Blender workflow, extraction checklist."},
+    {"path": "formats/tim.md", "title": "TIM format", "tags": ["tim", "texture", "image", "format", "clut", "palette", "vram"], "summary": "Byte layout of TIM files, pixel modes, colour word, scanning tips."},
+    {"path": "formats/tmd.md", "title": "TMD format", "tags": ["tmd", "model", "mesh", "format", "primitive", "libgs"], "summary": "Byte layout of TMD files, object table, primitive header, generic data layout rule with ilen table."},
+    {"path": "formats/exe-and-disc.md", "title": "Discs, executables and asset formats", "tags": ["disc", "iso", "bin", "cue", "chd", "sector", "xa", "str", "system.cnf", "ps-x exe", "executable", "vab", "seq", "ghidra"], "summary": "Disc image types, CD sector layouts, SYSTEM.CNF, PS-X EXE header, list of common asset formats."},
+    {"path": "world/world-building.md", "title": "How PS1 games built worlds", "tags": ["world", "level design", "streaming", "portals", "sectors", "grid", "visibility", "lod", "fog", "collision", "walkmesh", "pre-rendered", "procedural", "case study"], "summary": "Constraints, level structures with game case studies, culling pipeline, collision, lighting, skies, procedural PS1 games, RAM split."},
+    {"path": "world/procedural-recipes.md", "title": "Procedural recipes", "tags": ["world generation", "procedural", "terrain", "dungeon", "noise", "chunks", "sky dome", "budget"], "summary": "Algorithms for PS1-style terrain and dungeons (implemented in tools/worldgen.py), culling, OT bucketing, sky dome, budget check."},
+    {"path": "glossary.md", "title": "Glossary", "tags": ["glossary", "terms", "definitions"], "summary": "One-line definitions with links."},
+    {"path": "sources.md", "title": "Sources and trust levels", "tags": ["sources", "references", "citation", "trust"], "summary": "Where facts come from and how to resolve disagreements."}
+  ],
+  "tools": [
+    {"module": "ref.tools.fixedpoint", "path": "tools/fixedpoint.py", "tags": ["gte", "fixed point", "jitter"], "run": "python -m ref.tools.fixedpoint", "summary": "GTE-style RTPS, NCLIP, AVSZ3, depth cue in fixed point."},
+    {"module": "ref.tools.raster", "path": "tools/raster.py", "tags": ["rasteriser", "affine", "dither", "ordering table"], "run": "import ref.tools.raster", "summary": "Software renderer following PS1 rules, with modern comparison modes."},
+    {"module": "ref.tools.tim", "path": "tools/tim.py", "tags": ["tim", "texture"], "run": "python -m ref.tools.tim info FILE.tim", "summary": "Read, write, decode and scan TIM images."},
+    {"module": "ref.tools.tmd", "path": "tools/tmd.py", "tags": ["tmd", "model", "obj"], "run": "python -m ref.tools.tmd obj FILE.tmd --out FILE.obj", "summary": "Read, write and OBJ-export TMD models."},
+    {"module": "ref.tools.worldgen", "path": "tools/worldgen.py", "tags": ["world generation", "terrain", "dungeon", "obj"], "run": "python -m ref.tools.worldgen terrain --out t.obj --png t.png", "summary": "PS1-style terrain and dungeon generators with baked vertex colour and previews."},
+    {"module": "ref.tools.demo", "path": "tools/demo.py", "tags": ["images", "comparison"], "run": "python -m ref.tools.demo --out ref_out", "summary": "Renders the comparison images in look/images."},
+    {"module": "ref.tools.pngio", "path": "tools/pngio.py", "tags": ["png"], "run": "import ref.tools.pngio", "summary": "Minimal PNG writer and nearest upscaler."}
+  ]
+}
