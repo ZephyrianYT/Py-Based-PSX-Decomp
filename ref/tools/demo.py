@@ -52,6 +52,8 @@ def save(path: str, img: tuple[int, int, bytes], scale: int) -> None:
 
 
 def checker_texture() -> Texture:
+    # Built as a real 4-bit TIM and decoded again, so the demo also exercises
+    # the same texture path a game asset would take.
     """64x64 4-bit TIM with a 2-colour checker + border lines, round-tripped through the TIM codec."""
     pix = []
     for y in range(64):
@@ -89,6 +91,12 @@ def mesh_from(parts) -> Mesh:
 # ---------------------------------------------------------------- scenes
 
 def scene_affine(out: str, scale: int) -> None:
+    """A checkerboard floor of large quads, seen at a low angle.
+
+    Left (PS1): straight checker lines bend and kink along each quad's
+    diagonal, because u,v are interpolated in screen space. Right: the same
+    floor with perspective-correct texturing stays straight.
+    """
     tex = checker_texture()
     S = 1024
     verts, faces = [], []
@@ -106,6 +114,8 @@ def scene_affine(out: str, scale: int) -> None:
 
 
 def scene_dither(out: str, scale: int) -> None:
+    """One Gouraud-shaded quad. Left: PS1 dither (fine grain, smooth-looking).
+    Right: plain 15-bit truncation (visible bands of 32 levels)."""
     fbs = []
     for dither in (True, False):
         fb = Framebuffer(160, 120)
@@ -148,6 +158,12 @@ def scene_jitter(out: str, scale: int) -> None:
 
 
 def scene_sorting(out: str, scale: int) -> None:
+    """A huge floor quad and a cube standing on its far half.
+
+    The floor's single average depth is NEARER than the cube's, so the ordering
+    table draws the floor last and it covers the cube's lower half (left).
+    A Z-buffer resolves depth per pixel and gets it right (right).
+    """
     def build():
         floor_v = [(-2500, 0, 1200), (-2500, 0, 9000), (2500, 0, 9000), (2500, 0, 1200)]
         floor = ([tuple(map(float, v)) for v in floor_v], [Face((0, 1, 2, 3), colors=((60, 110, 60), (60, 110, 60), (30, 60, 30), (30, 60, 30)))])
@@ -177,6 +193,8 @@ def _fog_parts():
 
 
 def scene_fog(out: str, scale: int) -> None:
+    """A corridor of pillars. Left: GTE-style depth cue blends vertex colours
+    toward the fog colour with distance. Right: no fog, so the far end pops."""
     cam = Camera(position=(0, 450, -300), pitch=math.radians(4), h=180)
     fogc = (150, 150, 160)
     left, right = Framebuffer(clear=fogc), Framebuffer(clear=fogc)

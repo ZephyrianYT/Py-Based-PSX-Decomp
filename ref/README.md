@@ -42,17 +42,31 @@ Python 3.9+ standard library only: no NumPy and no Pillow.
 | `tools/tmd.py` | Read and write TMD files, and export them to OBJ |
 | `tools/worldgen.py` | PS1-style world generators: tile terrain with baked vertex colour, and a grid dungeon |
 | `tools/pngio.py` | Minimal PNG writer (zlib only) |
-| `tools/demo.py` | Command-line entry point that renders the side-by-side comparison images |
+| `tools/demo.py` | Renders the side-by-side comparison images |
+| `__main__.py` | `python -m ref <command>`: one entry point for every tool (also the container entry point) |
 
 ```bash
 # from the repository root
-python -m ref.tools.demo --out ref_out          # renders the comparison PNGs
-python -m ref.tools.worldgen terrain --out ref_out/terrain.obj
-python -m ref.tools.worldgen dungeon --out ref_out/dungeon.obj
-python -m ref.tools.tim info path/to/file.tim
-python -m ref.tools.tmd obj path/to/model.tmd --out model.obj
-python -m unittest discover -s ref/tests -t .   # self-tests
+python -m ref                                   # list commands (ref/__main__.py)
+python -m ref demo --out ref_out                # render the comparison PNGs
+python -m ref worldgen terrain --out ref_out/terrain.obj --png ref_out/terrain.png
+python -m ref worldgen dungeon --out ref_out/dungeon.obj
+python -m ref tim info path/to/file.tim
+python -m ref tmd obj path/to/model.tmd --out model.obj
+python -m ref test                              # self-tests
 ```
+
+The same commands run in the container. See the root README, section
+"Running in a container":
+
+```bash
+docker build -t psx-ref .
+docker run --rm psx-ref test
+docker run --rm -v "$PWD/ref_out:/out" --user "$(id -u):$(id -g)" psx-ref demo --out /out
+```
+
+Every tool module is commented for learners. Read `tools/raster.py` top to
+bottom for a guided tour of the PS1 rendering pipeline.
 
 ## Scope and honesty
 

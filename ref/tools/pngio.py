@@ -1,4 +1,13 @@
-"""Minimal PNG writer (RGB / RGBA, 8-bit) using only zlib. No reader."""
+"""Minimal PNG writer (RGB / RGBA, 8-bit) using only zlib. No reader.
+
+A PNG file is an 8-byte signature followed by "chunks". Each chunk is:
+    4-byte length | 4-byte type | data | 4-byte CRC32 of type + data
+Three chunks are enough for a valid image:
+    IHDR  width, height, bit depth, colour type
+    IDAT  the pixel rows, each prefixed with a filter byte (0 = none), zlib-compressed
+    IEND  end marker
+Writing it by hand keeps the tools free of third-party dependencies.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +26,7 @@ def encode_png(width: int, height: int, pixels: bytes, channels: int = 3) -> byt
     stride = width * channels
     if len(pixels) != stride * height:
         raise ValueError(f"expected {stride * height} bytes, got {len(pixels)}")
+    # Filter type 0 ("None") in front of every row: simplest valid choice.
     raw = b"".join(b"\x00" + pixels[y * stride:(y + 1) * stride] for y in range(height))
     color_type = 2 if channels == 3 else 6
     ihdr = struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
@@ -29,7 +39,12 @@ def write_png(path: str, width: int, height: int, pixels: bytes, channels: int =
 
 
 def scale_nearest(width: int, height: int, pixels: bytes, factor: int, channels: int = 3) -> tuple[int, int, bytes]:
-    """Integer nearest-neighbour upscale (the correct way to enlarge PS1 output)."""
+    """Integer nearest-neighbour upscale (the correct way to enlarge PS1 output).
+
+    Each source pixel becomes a factor x factor block of identical pixels, so
+    hard edges and the dither pattern stay crisp. Smooth (bilinear) scaling
+    would blur them and misrepresent what the console drew.
+    """
     if factor == 1:
         return width, height, pixels
     out = bytearray()

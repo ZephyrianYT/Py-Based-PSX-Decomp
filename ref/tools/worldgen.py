@@ -15,6 +15,20 @@ CLI:
 
 World space is Y-up (OBJ convention). Colours in the OBJ are 0..1 vertex colours
 ("v x y z r g b"), readable by Blender and MeshLab.
+
+WHY THESE CHOICES (the PS1 reasoning behind each)
+=================================================
+* Integer coordinates on a grid    PS1 vertices are 16-bit integers; grids also
+                                   make collision trivial (look up the cell).
+* Quads of similar size            Big polygons warp (affine texturing) and
+                                   sort badly (one depth per polygon).
+* Lighting baked into vertex colour   Runtime per-pixel lighting does not exist;
+                                   colour stored per vertex is free to draw.
+* Colours snapped to 32 levels     The framebuffer only has 5 bits per channel.
+* Chunks                           Whole chunks can be skipped before any of
+                                   their vertices are transformed.
+* Deterministic seeds              The same seed always gives the same world,
+                                   so a level can be stored as a single number.
 """
 
 from __future__ import annotations
@@ -31,12 +45,15 @@ WALL_HEIGHT = 1024   # dungeon wall height
 
 @dataclass
 class Model:
+    """Generator output: a plain indexed mesh with per-vertex colour and chunk groups."""
     vertices: list[tuple[int, int, int]] = field(default_factory=list)
     colors: list[tuple[int, int, int]] = field(default_factory=list)   # 0..255 per vertex
     faces: list[tuple[int, ...]] = field(default_factory=list)          # CCW rings seen from the front
     chunks: dict[tuple[int, int], list[int]] = field(default_factory=dict)  # chunk -> face indices
 
     def add_quad(self, pts, cols, chunk=None) -> None:
+        """Append a quad with its own four vertices (walls need unshared
+        vertices so each face can carry its own baked lighting)."""
         base = len(self.vertices)
         self.vertices += pts
         self.colors += cols
@@ -72,21 +89,38 @@ class Model:
 
 
 def quantize_color(c: tuple[float, float, float]) -> tuple[int, int, int]:
-    """Clamp to 0..255 and snap to the 32 levels a 15-bit framebuffer can show."""
+    """Clamp to 0..255 and snap to the 32 levels a 15-bit framebuffer can show.
+
+    ``& 0xF8`` clears the low 3 bits, leaving multiples of 8: exactly the values
+    a 5-bit channel can represent once expanded to 8 bits.
+    """
     return tuple(int(max(0, min(255, round(v)))) & 0xF8 for v in c)
 
 
 # ---------------------------------------------------------------- noise
+#
+# "Value noise": put a pseudo-random number on every integer grid point, then
+# blend smoothly between the four surrounding points. Layering several copies
+# at doubling frequency and halving strength ("fBm", fractal Brownian motion)
+# gives large hills with smaller bumps on top: natural-looking terrain.
 
 def _hash(ix: int, iy: int, seed: int) -> float:
+    """Repeatable pseudo-random value in 0..1 for a grid point (integer hash).
+
+    Multiplying by large odd constants and xor-shifting scrambles the bits so
+    neighbouring points get unrelated values. No random-number state is needed.
+    """
     h = (ix * 374761393 + iy * 668265263 + seed * 2147483647) & 0xFFFFFFFF
     h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
     return ((h ^ (h >> 16)) & 0xFFFF) / 0xFFFF
 
 
 def value_noise(x: float, y: float, seed: int) -> float:
+    """Smoothly interpolated noise at a real-valued position."""
     ix, iy = math.floor(x), math.floor(y)
     fx_, fy_ = x - ix, y - iy
+    # Smoothstep (3t^2 - 2t^3) instead of plain t: flattens the curve at grid
+    # points so there are no visible creases where cells meet.
     sx, sy = fx_ * fx_ * (3 - 2 * fx_), fy_ * fy_ * (3 - 2 * fy_)
     a, b = _hash(ix, iy, seed), _hash(ix + 1, iy, seed)
     c, d = _hash(ix, iy + 1, seed), _hash(ix + 1, iy + 1, seed)
@@ -94,6 +128,8 @@ def value_noise(x: float, y: float, seed: int) -> float:
 
 
 def fbm(x: float, y: float, seed: int, octaves: int = 4) -> float:
+    """Sum of ``octaves`` noise layers, each twice the frequency and half the
+    amplitude of the last, normalised back to 0..1."""
     total, amp, freq, norm = 0.0, 1.0, 1.0, 0.0
     for o in range(octaves):
         total += value_noise(x * freq, y * freq, seed + o * 101) * amp
@@ -117,13 +153,17 @@ BANDS = [  # (max normalised height, colour) - painted-palette look
 def generate_terrain(size: int = 32, cell: int = 256, max_height: int = 1600, seed: int = 1,
                      chunk_cells: int = 8, light_dir=(0.5, 0.8, 0.3)) -> Model:
     """Grid of (size x size) quads. Heights are integers; colours are baked."""
-    n = size + 1
+    n = size + 1                      # N cells need N+1 corner samples per side
+    # 1. Height field: noise sampled once per grid corner, normalised to 0..1,
+    #    then scaled to whole world units (integers, like PS1 vertex data).
     hn = [[fbm(x / 8.0, z / 8.0, seed) for x in range(n)] for z in range(n)]
     lo = min(min(r) for r in hn)
     hi = max(max(r) for r in hn)
     hn = [[(v - lo) / (hi - lo or 1) for v in row] for row in hn]
     heights = [[int(v * max_height) for v in row] for row in hn]
 
+    # 2. Bake lighting into each vertex colour, offline, so the renderer only
+    #    has to interpolate colours. This is what PS1 level tools did.
     L = light_dir
     ll = math.sqrt(sum(c * c for c in L))
     L = tuple(c / ll for c in L)
@@ -134,16 +174,22 @@ def generate_terrain(size: int = 32, cell: int = 256, max_height: int = 1600, se
             hr = heights[z][min(n - 1, x + 1)]
             hd = heights[max(0, z - 1)][x]
             hu = heights[min(n - 1, z + 1)][x]
+            # Surface normal from the slope to the neighbours (central
+            # differences): steep in x gives a large x component, and so on.
             nx, ny, nz = (hl - hr), 2.0 * cell, (hd - hu)
             nl = math.sqrt(nx * nx + ny * ny + nz * nz)
+            # Lambert lighting: brightness = cos(angle between normal and sun).
             diffuse = max(0.0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl)
             # concavity AO: darker where neighbours are higher than this vertex
             concave = ((hl + hr + hd + hu) / 4 - heights[z][x]) / max(1, max_height)
             ao = max(0.55, min(1.0, 1.0 - concave * 4))
+            # Base colour from a small hand-picked palette by height: reads as
+            # "painted", the way PS1 art was, rather than photographic.
             band = next(c for h, c in BANDS if hn[z][x] <= h)
             k = (0.35 + 0.75 * diffuse) * ao
             color_at[(x, z)] = quantize_color(tuple(c * k for c in band))
 
+    # 3. Geometry: one vertex per sample, one quad per cell, grouped into chunks.
     m = Model()
     for z in range(n):  # shared vertex grid: one vertex per height sample, like a PS1 terrain chunk
         for x in range(n):
@@ -161,6 +207,7 @@ def generate_terrain(size: int = 32, cell: int = 256, max_height: int = 1600, se
 
 @dataclass
 class Room:
+    """A rectangle of open cells on the dungeon grid."""
     x: int
     y: int
     w: int
@@ -177,7 +224,9 @@ class Room:
 
 def generate_dungeon_grid(size: int = 24, rooms: int = 8, seed: int = 1, extra_loops: int = 2):
     """Return (grid, rooms) where grid[y][x] is True for open cells."""
-    rng = random.Random(seed)
+    rng = random.Random(seed)          # own RNG: same seed -> same dungeon
+    # 1. Rooms: try random rectangles, keep the ones that do not overlap
+    #    (with a 1-cell gap so walls separate them). Give up after enough tries.
     placed: list[Room] = []
     for _ in range(rooms * 30):
         if len(placed) >= rooms:
@@ -192,6 +241,11 @@ def generate_dungeon_grid(size: int = 24, rooms: int = 8, seed: int = 1, extra_l
             for xx in range(r.x, r.x + r.w):
                 grid[yy][xx] = True
 
+    # 2. Connections. A minimum spanning tree links every room using the
+    #    shortest total corridor length, so everything is reachable. Prim's
+    #    algorithm: start from room 0, repeatedly add the closest outside room.
+    #    A tree alone has dead ends everywhere; a few extra random edges add
+    #    loops, which make levels nicer to explore.
     # Prim's MST over room centres (Manhattan distance), then a few extra edges for loops.
     def dist(a, b):
         (ax, ay), (bx, by) = a.center, b.center
@@ -208,6 +262,8 @@ def generate_dungeon_grid(size: int = 24, rooms: int = 8, seed: int = 1, extra_l
         rng.shuffle(candidates)
         edges += candidates[:extra_loops]
 
+    # 3. Carve each connection as an L-shaped corridor (horizontal then
+    #    vertical, or the other way round, chosen at random).
     for i, j in edges:  # L-shaped corridors
         (x0, y0), (x1, y1) = placed[i].center, placed[j].center
         if rng.random() < 0.5:
@@ -246,6 +302,9 @@ def generate_dungeon(size: int = 24, rooms: int = 8, seed: int = 1, chunk_cells:
     """``subdiv`` splits every sector face k x k: PS1 games subdivided geometry the camera
     gets close to, to limit affine warping, sorting errors and near-plane dropout."""
     grid, placed = generate_dungeon_grid(size, rooms, seed)
+    # One torch in the middle of each room. Light falls off with distance and
+    # fades to near-black, like the black "fog" PS1 dungeons used to hide how
+    # little could be drawn.
     torches = [((r.center[0] + 0.5) * SECTOR, (r.center[1] + 0.5) * SECTOR) for r in placed]
     torch_color = (255, 176, 96)
     radius = 4.5 * SECTOR
@@ -268,6 +327,10 @@ def generate_dungeon(size: int = 24, rooms: int = 8, seed: int = 1, chunk_cells:
     def open_(x, y):
         return 0 <= x < size and 0 <= y < size and grid[y][x]
 
+    # Extrude the 2D grid into 3D: every open cell gets a floor and a ceiling,
+    # and a wall on each side that touches a solid cell. Each quad's corner
+    # order is chosen so its front faces INTO the open cell (back-face culling
+    # then hides the outside of the walls automatically).
     for y in range(size):
         for x in range(size):
             if not grid[y][x]:
@@ -303,6 +366,8 @@ def ascii_map(grid) -> str:
 # ---------------------------------------------------------------- preview
 
 def preview(model: Model, path: str, kind: str, scale: int = 2) -> dict:
+    """Render the model at 320x240 through ref/tools/raster.py with PS1 rules,
+    fog matching the background colour, and save a PNG."""
     from .raster import Camera, Framebuffer, RenderSettings, render_mesh
 
     xs = [v[0] for v in model.vertices]

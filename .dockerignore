@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+ref_out
+*.obj
+Dockerfile
+docker-compose.yml
+.dockerignore

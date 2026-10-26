@@ -1,5 +1,21 @@
 """TIM image format: read, write, decode, scan (see ref/formats/tim.md).
 
+WHAT A TIM IS
+=============
+A TIM file is a VRAM upload saved to disk. The PS1 GPU has a single 1 MB block of
+video memory (1024 x 512 cells of 16 bits) that holds the screen, the textures
+and the palettes together. A TIM records the pixels *and where in VRAM they
+should go*, so a game can copy it straight in:
+
+    +--------+--------+  +-------------------------+  +-------------------------+
+    | ID=0x10| FLAGS  |  | CLUT block (optional)   |  | IMAGE block             |
+    +--------+--------+  | size, x, y, w, h, data  |  | size, x, y, w, h, data  |
+                         +-------------------------+  +-------------------------+
+
+Widths are counted in 16-bit VRAM cells ("halfwords"), not pixels. A 4-bit
+texture packs 4 pixels into each cell, an 8-bit one packs 2, and a 15-bit one
+uses 1. Forgetting this is the classic first bug when writing a TIM parser.
+
 CLI:
     python -m ref.tools.tim info FILE.tim
     python -m ref.tools.tim png  FILE.tim OUT.png [--clut N]
@@ -14,12 +30,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 TIM_ID = 0x10
+# Pixel modes (FLAGS bits 0-2)
 PMODE_4BIT, PMODE_8BIT, PMODE_15BIT, PMODE_24BIT, PMODE_MIXED = range(5)
 PMODE_NAMES = {0: "4-bit CLUT", 1: "8-bit CLUT", 2: "15-bit direct", 3: "24-bit", 4: "mixed"}
 
 
 @dataclass
 class Block:
+    """One rectangle destined for VRAM: a palette block or an image block."""
     x: int
     y: int
     w: int  # in halfwords
@@ -44,10 +62,15 @@ class TimImage:
 
     @property
     def num_cluts(self) -> int:
+        """How many palettes the file carries. Each CLUT row is one palette."""
         return self.clut.h if self.clut else 0
 
 
 # ---------------------------------------------------------------- colour helpers
+#
+# PS1 colour word (16 bits):  [S][BBBBB][GGGGG][RRRRR]
+#   S (bit 15) = semi-transparency / mask flag
+#   note the order: RED is in the LOW bits, BLUE in the high bits.
 
 def rgb8_to_15(r: int, g: int, b: int, stp: bool = False) -> int:
     """8-bit RGB -> PS1 15-bit BGR halfword. Note: pure black becomes transparent unless stp."""
@@ -62,8 +85,11 @@ def rgb15_to_rgb8(c: int) -> tuple[int, int, int]:
 # ---------------------------------------------------------------- parsing
 
 def _read_block(data: bytes, off: int) -> tuple[Block, int]:
+    """Read one block header (12 bytes) plus its halfwords; return the block and
+    the offset of whatever follows it."""
     if off + 12 > len(data):
         raise ValueError("truncated block header")
+    # "<IHHHH": little-endian u32 size, then u16 x, y, w, h
     bnum, x, y, w, h = struct.unpack_from("<IHHHH", data, off)
     count = w * h
     if off + 12 + count * 2 > len(data):
@@ -77,15 +103,16 @@ def _read_block(data: bytes, off: int) -> tuple[Block, int]:
 
 
 def read_tim(data: bytes, offset: int = 0) -> TimImage:
+    """Parse a TIM starting at ``offset`` (non-zero when it is embedded in an archive)."""
     ident, flags = struct.unpack_from("<II", data, offset)
     if ident != TIM_ID:
         raise ValueError(f"not a TIM (id=0x{ident:08X})")
-    pmode = flags & 7
-    if pmode > 4 or flags & ~0xF:
+    pmode = flags & 7                  # bits 0-2: pixel mode
+    if pmode > 4 or flags & ~0xF:      # anything above bit 3 must be zero
         raise ValueError(f"bad TIM flags 0x{flags:08X}")
     off = offset + 8
     clut = None
-    if flags & 8:
+    if flags & 8:                      # bit 3 (CF): a CLUT block comes first
         clut, off = _read_block(data, off)
     image, _ = _read_block(data, off)
     if pmode in (PMODE_4BIT, PMODE_8BIT) and clut is None:
@@ -104,7 +131,11 @@ def tim_size(tim: TimImage) -> int:
 # ---------------------------------------------------------------- decoding
 
 def tim_indices(tim: TimImage) -> list[int]:
-    """Per-pixel values: palette indices for 4/8-bit, raw halfwords for 15-bit."""
+    """Per-pixel values: palette indices for 4/8-bit, raw halfwords for 15-bit.
+
+    Unpacking order matters: the PS1 GPU reads the LOWEST bits first, so in 4-bit
+    mode the low nibble is the leftmost pixel of each group of four.
+    """
     out: list[int] = []
     if tim.pmode == PMODE_4BIT:
         for hw in tim.image.data:
@@ -120,7 +151,11 @@ def tim_indices(tim: TimImage) -> list[int]:
 
 
 def tim_halfwords(tim: TimImage, clut_index: int = 0) -> list[int]:
-    """Resolve the palette and return one 15-bit colour per pixel (0x0000 = transparent)."""
+    """Resolve the palette and return one 15-bit colour per pixel (0x0000 = transparent).
+
+    This is what the GPU does at draw time: look each index up in the CLUT row
+    chosen by the polygon. Different rows = different colour schemes, same art.
+    """
     vals = tim_indices(tim)
     if tim.pmode in (PMODE_4BIT, PMODE_8BIT):
         assert tim.clut is not None
@@ -137,6 +172,8 @@ def tim_to_rgba(tim: TimImage, clut_index: int = 0) -> tuple[int, int, bytes]:
     w, h = tim.width, tim.height
     out = bytearray()
     if tim.pmode == PMODE_24BIT:
+        # 24-bit images are packed R,G,B bytes running across halfword
+        # boundaries. They are for full-screen stills, never for textures.
         raw = struct.pack(f"<{len(tim.image.data)}H", *tim.image.data)
         row_bytes = tim.image.w * 2
         for y in range(h):
@@ -164,9 +201,12 @@ def write_tim(
     """Build a TIM. ``pixels`` are palette indices (4/8-bit) or 15-bit halfwords.
 
     ``cluts`` is a list of palettes (each 16 or 256 halfwords) for 4/8-bit modes.
+    The default VRAM positions put the image just right of a 320-wide frame
+    buffer and the palettes near the bottom of VRAM, a common PS1 layout.
     """
     if len(pixels) != width * height:
         raise ValueError("pixel count does not match width*height")
+    # Pack pixels into 16-bit VRAM cells (the reverse of tim_indices).
     if pmode == PMODE_4BIT:
         if width % 4:
             raise ValueError("4-bit width must be a multiple of 4")
@@ -186,6 +226,7 @@ def write_tim(
     else:
         raise ValueError("write_tim supports 4-bit, 8-bit and 15-bit modes")
 
+    # Header: ID, then flags = pixel mode | CF bit (8) when a CLUT follows.
     out = bytearray(struct.pack("<II", TIM_ID, pmode | (8 if pmode in (0, 1) else 0)))
     if pmode in (PMODE_4BIT, PMODE_8BIT):
         entries = 16 if pmode == PMODE_4BIT else 256
@@ -193,7 +234,7 @@ def write_tim(
             raise ValueError("palettised TIM needs at least one CLUT")
         flat: list[int] = []
         for pal in cluts:
-            flat += (list(pal) + [0] * entries)[:entries]
+            flat += (list(pal) + [0] * entries)[:entries]   # pad or trim to exactly 16/256
         out += struct.pack("<IHHHH", 12 + len(flat) * 2, clut_xy[0], clut_xy[1], entries, len(cluts))
         out += struct.pack(f"<{len(flat)}H", *flat)
     out += struct.pack("<IHHHH", 12 + len(words) * 2, image_xy[0], image_xy[1], hw_w, height)
@@ -202,6 +243,11 @@ def write_tim(
 
 
 # ---------------------------------------------------------------- scanning
+#
+# Games often bury TIMs inside their own archive files. A cheap way to find
+# them: search for the 4-byte ID, check the flags look sane, and try to parse.
+# A real TIM parses cleanly; random bytes that happen to contain 10 00 00 00
+# almost never do.
 
 def scan(data: bytes) -> list[tuple[int, TimImage]]:
     """Find embedded TIMs by signature + structural validation."""
@@ -212,7 +258,7 @@ def scan(data: bytes) -> list[tuple[int, TimImage]]:
         if pos + 8 <= len(data) and data[pos + 4] in valid_flags and data[pos + 5:pos + 8] == b"\x00\x00\x00":
             try:
                 tim = read_tim(data, pos)
-                if 0 < tim.width <= 1024 and 0 < tim.height <= 512:
+                if 0 < tim.width <= 1024 and 0 < tim.height <= 512:   # must fit in VRAM
                     found.append((pos, tim))
             except (ValueError, struct.error):
                 pass

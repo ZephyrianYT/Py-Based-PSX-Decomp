@@ -266,6 +266,21 @@ class PngTest(unittest.TestCase):
         self.assertEqual((w, h, px), (3, 3, b"\x01\x02\x03" * 9))
 
 
+class EntryPointTest(unittest.TestCase):
+    def test_commands(self):
+        import contextlib
+        import io
+        from ref.__main__ import main
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(main([]), 0)
+            self.assertEqual(main(["docs"]), 0)
+            self.assertEqual(main(["jitter"]), 0)
+        self.assertIn("ref/hardware/gpu.md", buf.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["nope"]), 2)
+
+
 class DemoSmokeTest(unittest.TestCase):
     def test_demo_runs(self):
         from ref.tools import demo

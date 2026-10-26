@@ -1,5 +1,22 @@
 """TMD model format: read, write, export to OBJ (see ref/formats/tmd.md).
 
+WHAT A TMD IS
+=============
+TMD is Sony's standard 3D model file. It is designed so the CPU can turn it
+into GPU drawing commands with as little work as possible:
+
+    header (12 bytes)      ID 0x41, flags, number of objects
+    object table           one 28-byte entry per object, pointing at three lists:
+      vertex list          int16 x, y, z, pad     (8 bytes each)
+      normal list          int16 nx, ny, nz, pad  (1.3.12 fixed point, 4096 = 1.0)
+      primitive list       polygons: a 4-byte header + data that references the
+                           lists above by index
+
+Each primitive's header says what kind of polygon it is (flat or Gouraud,
+textured or not, triangle or quad, lit or unlit). Its data layout depends on
+that kind, so a parser must work out the layout before it can read the data.
+``layout()`` below encodes the rule; ``ilen`` in the header lets us verify it.
+
 Polygon primitives are decoded with the generic layout rule from tmd.md. Any
 primitive whose header ``ilen`` disagrees with that rule (or that is a line or
 sprite) is skipped via ``ilen`` and recorded in ``TmdObject.skipped`` instead of
@@ -23,11 +40,22 @@ from typing import Optional
 
 TMD_ID = 0x41
 
-# mode bits (polygon)
+# mode bits (polygon). These are the same bits as the GPU's polygon command
+# byte, so a TMD mode of 0x3C is literally GPU command 0x3C (Gouraud textured quad).
 TGE, ABE, TME, QUAD, IIP = 0x01, 0x02, 0x04, 0x08, 0x10
+#     TGE  = texture used as-is (no brightness modulation)
+#     ABE  = semi-transparent
+#     TME  = textured
+#     QUAD = four vertices instead of three
+#     IIP  = Gouraud (per-vertex colour/normal) instead of flat
 # flag bits
 LGT, FCE, GRD = 0x01, 0x02, 0x04
+#     LGT = "no lighting": colours are stored and used directly (pre-lit / baked)
+#     FCE = double-sided
+#     GRD = per-vertex colours on an otherwise flat primitive
 
+# Size of the GPU packet each primitive turns into, in 32-bit words. Stored in
+# the file (olen) so the game can allocate packet memory without decoding.
 _OLEN = {  # (quad, textured, gouraud-output) -> GPU packet words
     (0, 0, 0): 4, (0, 1, 0): 7, (0, 0, 1): 6, (0, 1, 1): 9,
     (1, 0, 0): 5, (1, 1, 0): 9, (1, 0, 1): 8, (1, 1, 1): 12,
@@ -71,7 +99,18 @@ class Tmd:
 
 
 def layout(mode: int, flag: int) -> tuple[int, int, int, bool]:
-    """Return (uv_words, color_words, index_halfwords, lit) for a polygon primitive."""
+    """Return (uv_words, color_words, index_halfwords, lit) for a polygon primitive.
+
+    The data that follows a primitive header is, in order:
+      1. texture coordinates (only if textured): one word per vertex
+      2. colours: how many depends on lighting and shading (see below)
+      3. indices into the normal and vertex lists, two 16-bit indices per word
+
+    Why colours vary: a *lit* polygon gets its colour from the GTE's lighting
+    at runtime, so it needs normals, plus a base colour only if untextured. An
+    *unlit* polygon has its final colour baked into the file: one colour if
+    flat, one per vertex if shaded.
+    """
     n = 4 if mode & QUAD else 3
     tme, iip = bool(mode & TME), bool(mode & IIP)
     lit = not (flag & LGT)
@@ -115,6 +154,10 @@ def _decode_prim(mode: int, flag: int, words: bytes) -> Primitive:
         p.colors.append((r, g, b))
         off += 4
     idx = list(struct.unpack_from(f"<{idx_count}H", words, off))
+    # Three index patterns:
+    #   lit + Gouraud: normal0, vertex0, normal1, vertex1, ...  (a normal per corner)
+    #   lit + flat:    normal0, vertex0, vertex1, ...           (one face normal)
+    #   unlit:         vertex0, vertex1, ...                    (no normals needed)
     if lit and mode & IIP:
         p.normals = idx[0::2]
         p.vertices = idx[1::2]
@@ -152,7 +195,12 @@ def read_tmd(data: bytes, base: Optional[int] = None) -> Tmd:
         for _ in range(np_):
             olen, ilen, flag, mode = struct.unpack_from("<BBBB", data, off)
             body = data[off + 4:off + 4 + ilen * 4]
+            # ilen tells us the data size, so we can ALWAYS step to the next
+            # primitive, even one we do not understand.
             off += 4 + ilen * 4
+            # Safety check: only decode polygons (mode bits 7-5 == 001) whose
+            # size matches our layout rule. Anything else is recorded, not
+            # guessed at, so a bad guess can never produce garbage geometry.
             if (mode >> 5) != 1 or ilen != expected_ilen(mode, flag) or len(body) < ilen * 4:
                 obj.skipped.append((mode, flag, ilen))
                 continue
@@ -236,6 +284,10 @@ def to_obj(tmd: Tmd, flip_y: bool = True) -> str:
         nuv = 0
         current_mat = None
         for p in obj.primitives:
+            # PS1 quads list corners in "Z" order (top-left, top-right,
+            # bottom-left, bottom-right) because the GPU draws them as triangles
+            # (0,1,2) and (1,2,3). OBJ wants corners in order around the edge,
+            # so swap the last two.
             ring = [0, 1, 3, 2] if p.n == 4 else [0, 1, 2]
             if flip_y:
                 ring = ring[::-1]
