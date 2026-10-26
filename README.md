@@ -5,13 +5,14 @@ decompilation and modernization of PlayStation 1 titles. The long-term vision
 is a pipeline that takes a PSX disc image and outputs a structured, editable
 project suitable for rebuilding into a modern executable.
 
-The repository currently has two parts:
+The repository currently has these parts:
 
 | Part | Status | What it is |
 |------|--------|------------|
 | **[`ref/`: PSX Reference Library](ref/README.md)** | **Working, tested** | A reference on how PS1 games *look*, how their *models and textures* are stored, and how their *worlds* were built. It is written for people and for AI agents, and comes with runnable, commented Python tools. |
 | **[`ui/`: web UI](ui/README.md)** | **Working, tested** | A browser app (Streamlit, Docker) that runs the tools: render PS1-vs-modern comparisons, preview uploaded TIM/TMD/RSD files, inspect executables, generate worlds, browse the docs. |
-| **Decomp Studio pipeline** | Concept / planned | The disc-to-project pipeline described in [Decomp Studio pipeline](#decomp-studio-pipeline) below. |
+| **[`decomp/`: Binary Analysis](decomp/README.md)** | **Working, tested with real Ghidra** | Runs Ghidra headless on a PS1 executable with the PS1 memory map, named hardware registers, `$gp`, and named GTE instructions, then decompiles every function to C. |
+| **Decomp Studio pipeline** | Partly built | The disc-to-project pipeline described in [Decomp Studio pipeline](#decomp-studio-pipeline) below. Binary Analysis works; the other stages are planned. |
 
 > This repository is not complete and should be treated as a prototype.
 
@@ -93,6 +94,9 @@ python -m ref tmd obj   path/to/model.tmd --out model.obj
 python -m ref rsd tmd   MODEL.RSD -o MODEL.TMD       # link Sony's RSD text models, like RSDLINK
 python -m ref exe info  path/to/program              # PS-X EXE / Net Yaroze ECOFF / Psy-Q CPE
 python -m ref validate  path/to/netyaroze_demo       # run every parser over real PS1-era files
+
+# Binary Analysis with Ghidra (needs Ghidra + JDK 21, or use Docker: see decomp/README.md)
+GHIDRA_INSTALL_DIR=/path/to/ghidra python -m decomp analyze GAME.EXE --out out/
 ```
 
 The generated `.obj` files carry per-vertex colours and open in Blender or MeshLab.
@@ -149,6 +153,8 @@ docker compose run --rm demo       # comparison images  -> ./ref_out
 docker compose run --rm terrain    # terrain OBJ + PNG   -> ./ref_out
 docker compose run --rm dungeon    # dungeon OBJ + PNG   -> ./ref_out
 docker compose run --rm tools tmd info /out/model.tmd   # anything else
+docker compose run --rm decomp analyze /work/GAME.EXE --out /work/out   # Ghidra decompile, files in ./work
+docker compose up ui                                    # web UI on http://localhost:8501
 ```
 
 Why containerise a stdlib-only tool? It gives a **pinned, reproducible
@@ -315,6 +321,7 @@ swap the CLUT index when decoding a TIM to make a palette-swapped variant.
 ├── Dockerfile              reproducible runtime for the ref/ tools
 ├── docker-compose.yml      test / demo / terrain / dungeon / ui services
 ├── ui/                     web UI: app.py (Streamlit pages), logic.py (testable actions), Dockerfile, tests
+├── decomp/                 Binary Analysis: image.py, ghidra.py, ghidra_scripts/*.java, Dockerfile, tests
 ├── .dockerignore
 └── ref/
     ├── __main__.py         `python -m ref <command>` entry point (also the container entry point)
@@ -337,9 +344,9 @@ swap the CLUT index when decoding a TIM to make a palette-swapped variant.
 ## Decomp Studio pipeline
 
 The pipeline below is the planned architecture of the wider project. The
-working, tested part of this repository today is `ref/`. Its format specs and
-parsers (TIM, TMD, PS-X EXE, disc sectors) are the groundwork for the
-**Image Intake** and **Asset Extraction** stages.
+working, tested parts of this repository today are `ref/` (format specs and
+parsers, the groundwork for **Image Intake** and **Asset Extraction**) and
+`decomp/` (**Binary Analysis**).
 
 ```
 disc image ──► Image Intake ──► Binary Analysis ──► Decompilation ──► Modernization ──► Output Project
@@ -353,8 +360,13 @@ for sector layouts, `SYSTEM.CNF` and the PS-X EXE header. `ref/tools/exe.py`
 identifies PS-X EXE, Net Yaroze ECOFF and Psy-Q CPE files, and finds the entry
 point and load address that **Binary Analysis** needs.)
 
-**Binary Analysis**: planned integration with Ghidra headless mode and
-PSX-specific loaders.
+**Binary Analysis**: **implemented** in [`decomp/`](decomp/README.md).
+`python -m decomp analyze GAME.EXE --out out/` turns a PS-X EXE, Net Yaroze
+ECOFF or Psy-Q CPE file into a memory image, and runs Ghidra headless with PS1
+setup scripts: the memory map, 52 named hardware registers, the entry point and `$gp`,
+optional Net Yaroze libps code and names, and every GTE instruction named. Then it
+decompiles every function to C, with a JSON index. On a real 1.2 MB Net Yaroze
+game it decompiles all 833 functions and names 217 GTE instructions.
 
 **Decompilation Layer**: converts assembly into preliminary C/C++ sources.
 (Currently stubbed and incomplete.)
@@ -385,10 +397,10 @@ shape the direction.
 ### Roadmap
 
 - [ ] Replace placeholder modules with real toolchain integrations
-- [ ] Implement Ghidra headless workflows
+- [x] Implement Ghidra headless workflows (`decomp/`: PS1 memory map, register names, GTE annotation, C export; tested against real Ghidra 12.1.4)
 - [ ] Add PSX asset parsers (*started: TIM, TMD, RSD and executables in `ref/tools/`, validated on real files*)
 - [ ] Build a minimal modern runtime layer
-- [ ] Create a reproducible build pipeline (*started: `Dockerfile`*)
+- [ ] Create a reproducible build pipeline (*started: `Dockerfile`, `ui/Dockerfile`, `decomp/Dockerfile`*)
 - [ ] Document internal formats and memory maps (*started: `ref/hardware/`, `ref/formats/`*)
 
 ---

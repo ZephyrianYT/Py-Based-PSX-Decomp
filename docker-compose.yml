@@ -6,6 +6,7 @@
 #   docker compose run --rm dungeon     # dungeon OBJ + preview -> ./ref_out
 #   docker compose run --rm tools tim info /out/some.tim   # any command
 #   docker compose up ui                # web UI on http://localhost:8501 (UI_PORT to change)
+#   docker compose run --rm decomp analyze /work/GAME.EXE --out /work/out   # Ghidra decompile (./work)
 #
 # Outputs are written as your host user (UID/GID default to 1000) so the files
 # in ./ref_out are owned by you, not root. On Linux, export UID and GID first if
@@ -51,3 +52,13 @@ services:
     environment:
       PSX_UI_PASSWORD: "${PSX_UI_PASSWORD:-}"
     restart: unless-stopped
+
+  # Binary Analysis stage (decomp/): Ghidra headless with PS1 setup scripts.
+  # Put executables in ./work; results appear in ./work/<out>.
+  decomp:
+    build:
+      context: .
+      dockerfile: decomp/Dockerfile
+    image: psx-decomp
+    volumes:
+      - ./work:/work
