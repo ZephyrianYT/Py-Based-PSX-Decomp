@@ -1,0 +1,64 @@
+# Convenience wrappers around the psx-ref image.
+#
+#   docker compose run --rm test        # run the self-tests
+#   docker compose run --rm demo        # comparison images -> ./ref_out
+#   docker compose run --rm terrain     # terrain OBJ + preview -> ./ref_out
+#   docker compose run --rm dungeon     # dungeon OBJ + preview -> ./ref_out
+#   docker compose run --rm tools tim info /out/some.tim   # any command
+#   docker compose up ui                # web UI on http://localhost:8501 (UI_PORT to change)
+#   docker compose run --rm decomp analyze /work/GAME.EXE --out /work/out   # Ghidra decompile (./work)
+#
+# Outputs are written as your host user (UID/GID default to 1000) so the files
+# in ./ref_out are owned by you, not root. On Linux, export UID and GID first if
+# yours differ:  export UID GID=$(id -g)
+
+x-base: &base
+  build: .
+  image: psx-ref
+  user: "${UID:-1000}:${GID:-1000}"
+  volumes:
+    - ./ref_out:/out
+
+services:
+  tools:
+    <<: *base
+
+  test:
+    <<: *base
+    command: ["test"]
+
+  demo:
+    <<: *base
+    command: ["demo", "--out", "/out"]
+
+  terrain:
+    <<: *base
+    command: ["worldgen", "terrain", "--out", "/out/terrain.obj", "--png", "/out/terrain.png"]
+
+  dungeon:
+    <<: *base
+    command: ["worldgen", "dungeon", "--out", "/out/dungeon.obj", "--png", "/out/dungeon.png"]
+
+  # Web UI (ui/): Streamlit app that runs the ref/ tools in the browser.
+  # Published on 127.0.0.1 only; set UI_HOST=0.0.0.0 to expose it on your network,
+  # and PSX_UI_PASSWORD to require a password.
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    image: psx-ui
+    ports:
+      - "${UI_HOST:-127.0.0.1}:${UI_PORT:-8501}:8501"
+    environment:
+      PSX_UI_PASSWORD: "${PSX_UI_PASSWORD:-}"
+    restart: unless-stopped
+
+  # Binary Analysis stage (decomp/): Ghidra headless with PS1 setup scripts.
+  # Put executables in ./work; results appear in ./work/<out>.
+  decomp:
+    build:
+      context: .
+      dockerfile: decomp/Dockerfile
+    image: psx-decomp
+    volumes:
+      - ./work:/work

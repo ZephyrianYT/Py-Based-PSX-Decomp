@@ -1,0 +1,2 @@
+# The web UI's only dependency. The ref/ tools themselves need nothing beyond Python.
+streamlit==1.45.1

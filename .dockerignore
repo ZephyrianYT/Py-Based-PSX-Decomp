@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+ref_out
+*.obj
+Dockerfile
+docker-compose.yml
+.dockerignore
+ui/screenshots
+**/.pytest_cache
+work
