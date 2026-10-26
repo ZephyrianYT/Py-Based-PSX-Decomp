@@ -5,6 +5,7 @@
 #   docker compose run --rm terrain     # terrain OBJ + preview -> ./ref_out
 #   docker compose run --rm dungeon     # dungeon OBJ + preview -> ./ref_out
 #   docker compose run --rm tools tim info /out/some.tim   # any command
+#   docker compose up ui                # web UI on http://localhost:8501 (UI_PORT to change)
 #
 # Outputs are written as your host user (UID/GID default to 1000) so the files
 # in ./ref_out are owned by you, not root. On Linux, export UID and GID first if
@@ -36,3 +37,17 @@ services:
   dungeon:
     <<: *base
     command: ["worldgen", "dungeon", "--out", "/out/dungeon.obj", "--png", "/out/dungeon.png"]
+
+  # Web UI (ui/): Streamlit app that runs the ref/ tools in the browser.
+  # Published on 127.0.0.1 only; set UI_HOST=0.0.0.0 to expose it on your network,
+  # and PSX_UI_PASSWORD to require a password.
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    image: psx-ui
+    ports:
+      - "${UI_HOST:-127.0.0.1}:${UI_PORT:-8501}:8501"
+    environment:
+      PSX_UI_PASSWORD: "${PSX_UI_PASSWORD:-}"
+    restart: unless-stopped

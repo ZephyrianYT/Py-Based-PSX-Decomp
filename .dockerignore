@@ -7,3 +7,5 @@ ref_out
 Dockerfile
 docker-compose.yml
 .dockerignore
+ui/screenshots
+**/.pytest_cache

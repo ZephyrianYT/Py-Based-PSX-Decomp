@@ -10,6 +10,7 @@ The repository currently has two parts:
 | Part | Status | What it is |
 |------|--------|------------|
 | **[`ref/`: PSX Reference Library](ref/README.md)** | **Working, tested** | A reference on how PS1 games *look*, how their *models and textures* are stored, and how their *worlds* were built. It is written for people and for AI agents, and comes with runnable, commented Python tools. |
+| **[`ui/`: web UI](ui/README.md)** | **Working, tested** | A browser app (Streamlit, Docker) that runs the tools: render PS1-vs-modern comparisons, preview uploaded TIM/TMD/RSD files, inspect executables, generate worlds, browse the docs. |
 | **Decomp Studio pipeline** | Concept / planned | The disc-to-project pipeline described in [Decomp Studio pipeline](#decomp-studio-pipeline) below. |
 
 > This repository is not complete and should be treated as a prototype.
@@ -20,6 +21,7 @@ The repository currently has two parts:
 
 - [Why this exists](#why-this-exists)
 - [Quick start](#quick-start)
+- [Web UI](#web-ui)
 - [Running in a container](#running-in-a-container)
 - [How it works](#how-it-works)
   - [The PS1 frame, step by step](#the-ps1-frame-step-by-step)
@@ -94,6 +96,28 @@ python -m ref validate  path/to/netyaroze_demo       # run every parser over rea
 ```
 
 The generated `.obj` files carry per-vertex colours and open in Blender or MeshLab.
+
+---
+
+## Web UI
+
+The same tools in the browser. It's built like
+[opencanary-ui](https://github.com/chrisjbawden/opencanary-ui): a Streamlit app
+with a sidebar of pages, shipped as a Docker image whose port is set by an
+environment variable.
+
+```bash
+docker compose up ui                          # http://localhost:8501
+PSX_UI_PASSWORD=secret docker compose up ui   # optional password (there is no default login)
+# or locally:  pip install -r ui/requirements.txt && cd ui && streamlit run app.py
+```
+
+![Look lab: PS1 rules vs modern](ui/screenshots/look-lab.png)
+
+Pages: **Library**, **Look lab** (toggle each PS1 rule), **GTE jitter**,
+**World generator**, **File inspector** (TIM / TMD / RSD / PS-X EXE / ECOFF /
+CPE, with a spinnable PS1-style model preview) and **Self-test**. Details are in
+[`ui/README.md`](ui/README.md).
 
 ---
 
@@ -289,7 +313,8 @@ swap the CLUT index when decoding a TIM to make a palette-swapped variant.
 .
 ├── README.md               this file
 ├── Dockerfile              reproducible runtime for the ref/ tools
-├── docker-compose.yml      test / demo / terrain / dungeon shortcuts
+├── docker-compose.yml      test / demo / terrain / dungeon / ui services
+├── ui/                     web UI: app.py (Streamlit pages), logic.py (testable actions), Dockerfile, tests
 ├── .dockerignore
 └── ref/
     ├── __main__.py         `python -m ref <command>` entry point (also the container entry point)

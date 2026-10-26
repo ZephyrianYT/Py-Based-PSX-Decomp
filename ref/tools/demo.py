@@ -11,7 +11,8 @@ from __future__ import annotations
 import argparse
 import math
 import os
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 from .pngio import scale_nearest, write_png
 from .raster import (Camera, Face, Framebuffer, Mesh, RenderSettings, ScreenVertex, Texture,
@@ -88,6 +89,60 @@ def mesh_from(parts) -> Mesh:
     return mesh
 
 
+# ---------------------------------------------------------------- scene specs
+#
+# Each 3D demo scene is described once, as a SceneSpec, so that the PNG demos
+# below and the web UI (ui/logic.py) render exactly the same scenes. build()
+# returns fresh meshes each call (mesh_from() rebases indices in place).
+
+@dataclass
+class SceneSpec:
+    title: str
+    build: Callable[[], list]                     # -> list[Mesh]
+    camera: Camera
+    clear: tuple = (0, 0, 0)
+    fog: Optional[tuple] = None                   # (colour, z start, z full) used when fog is on
+    z_max: int = 8192
+
+
+def affine_spec() -> SceneSpec:
+    """A checkerboard floor of large textured quads, seen at a low angle."""
+    tex = checker_texture()
+
+    def build():
+        S = 1024
+        verts, faces = [], []
+        for gz in range(4):
+            for gx in range(-2, 2):
+                b = len(verts)
+                verts += [(gx * S, 0, gz * S), (gx * S, 0, (gz + 1) * S), ((gx + 1) * S, 0, (gz + 1) * S), ((gx + 1) * S, 0, gz * S)]
+                faces.append(Face((b, b + 1, b + 2, b + 3), colors=((128, 128, 128),), uvs=((0, 0), (0, 63), (63, 63), (63, 0)), texture=tex))
+        return [Mesh(verts, faces)]
+    return SceneSpec("Checker floor (affine texturing)", build, Camera(position=(0, 320, -350), pitch=math.radians(14), h=180))
+
+
+def sorting_spec() -> SceneSpec:
+    """A huge floor quad and a cube standing on its far half."""
+    def build():
+        floor_v = [(-2500, 0, 1200), (-2500, 0, 9000), (2500, 0, 9000), (2500, 0, 1200)]
+        floor = ([tuple(map(float, v)) for v in floor_v], [Face((0, 1, 2, 3), colors=((60, 110, 60), (60, 110, 60), (30, 60, 30), (30, 60, 30)))])
+        cube = box(-300, 0, 5200, 300, 600, 5800, color=(220, 80, 60))
+        return [mesh_from([floor, cube])]
+    return SceneSpec("Floor and cube (depth sorting)", build, Camera(position=(0, 700, -200), pitch=math.radians(6), h=200),
+                     clear=(100, 140, 200), z_max=12000)
+
+
+def fog_spec() -> SceneSpec:
+    """A corridor of pillars receding into the distance."""
+    fogc = (150, 150, 160)
+    return SceneSpec("Pillar corridor (depth-cue fog)", lambda: [_fog_parts()],
+                     Camera(position=(0, 450, -300), pitch=math.radians(4), h=180),
+                     clear=fogc, fog=(fogc, 1200, 7000), z_max=12000)
+
+
+SCENE_SPECS = {"affine": affine_spec, "sorting": sorting_spec, "fog": fog_spec}
+
+
 # ---------------------------------------------------------------- scenes
 
 def scene_affine(out: str, scale: int) -> None:
@@ -97,19 +152,10 @@ def scene_affine(out: str, scale: int) -> None:
     diagonal, because u,v are interpolated in screen space. Right: the same
     floor with perspective-correct texturing stays straight.
     """
-    tex = checker_texture()
-    S = 1024
-    verts, faces = [], []
-    for gz in range(4):
-        for gx in range(-2, 2):
-            b = len(verts)
-            verts += [(gx * S, 0, gz * S), (gx * S, 0, (gz + 1) * S), ((gx + 1) * S, 0, (gz + 1) * S), ((gx + 1) * S, 0, gz * S)]
-            faces.append(Face((b, b + 1, b + 2, b + 3), colors=((128, 128, 128),), uvs=((0, 0), (0, 63), (63, 63), (63, 0)), texture=tex))
-    mesh = Mesh(verts, faces)
-    cam = Camera(position=(0, 320, -350), pitch=math.radians(14), h=180)
+    spec = affine_spec()
     left, right = Framebuffer(), Framebuffer()
-    render_mesh(left, [mesh], cam, RenderSettings(psx=True, affine=True))
-    render_mesh(right, [mesh], cam, RenderSettings(psx=False, affine=False, dither=False))
+    render_mesh(left, spec.build(), spec.camera, RenderSettings(psx=True, affine=True))
+    render_mesh(right, spec.build(), spec.camera, RenderSettings(psx=False, affine=False, dither=False))
     save(os.path.join(out, "affine_vs_perspective.png"), hstack(left, right), scale)
 
 
@@ -164,15 +210,10 @@ def scene_sorting(out: str, scale: int) -> None:
     table draws the floor last and it covers the cube's lower half (left).
     A Z-buffer resolves depth per pixel and gets it right (right).
     """
-    def build():
-        floor_v = [(-2500, 0, 1200), (-2500, 0, 9000), (2500, 0, 9000), (2500, 0, 1200)]
-        floor = ([tuple(map(float, v)) for v in floor_v], [Face((0, 1, 2, 3), colors=((60, 110, 60), (60, 110, 60), (30, 60, 30), (30, 60, 30)))])
-        cube = box(-300, 0, 5200, 300, 600, 5800, color=(220, 80, 60))
-        return mesh_from([floor, cube])
-    cam = Camera(position=(0, 700, -200), pitch=math.radians(6), h=200)
-    left, right = Framebuffer(clear=(100, 140, 200)), Framebuffer(clear=(100, 140, 200))
-    render_mesh(left, [build()], cam, RenderSettings(sort="ot", z_max=12000))
-    render_mesh(right, [build()], cam, RenderSettings(sort="zbuffer", z_max=12000))
+    spec = sorting_spec()
+    left, right = Framebuffer(clear=spec.clear), Framebuffer(clear=spec.clear)
+    render_mesh(left, spec.build(), spec.camera, RenderSettings(sort="ot", z_max=spec.z_max))
+    render_mesh(right, spec.build(), spec.camera, RenderSettings(sort="zbuffer", z_max=spec.z_max))
     save(os.path.join(out, "sorting_ot_vs_zbuffer.png"), hstack(left, right), scale)
 
 
@@ -195,11 +236,10 @@ def _fog_parts():
 def scene_fog(out: str, scale: int) -> None:
     """A corridor of pillars. Left: GTE-style depth cue blends vertex colours
     toward the fog colour with distance. Right: no fog, so the far end pops."""
-    cam = Camera(position=(0, 450, -300), pitch=math.radians(4), h=180)
-    fogc = (150, 150, 160)
-    left, right = Framebuffer(clear=fogc), Framebuffer(clear=fogc)
-    render_mesh(left, [_fog_parts()], cam, RenderSettings(fog=(fogc, 1200, 7000), z_max=12000))
-    render_mesh(right, [_fog_parts()], cam, RenderSettings(z_max=12000))
+    spec = fog_spec()
+    left, right = Framebuffer(clear=spec.clear), Framebuffer(clear=spec.clear)
+    render_mesh(left, spec.build(), spec.camera, RenderSettings(fog=spec.fog, z_max=spec.z_max))
+    render_mesh(right, spec.build(), spec.camera, RenderSettings(z_max=spec.z_max))
     save(os.path.join(out, "fog_depthcue.png"), hstack(left, right), scale)
 
 

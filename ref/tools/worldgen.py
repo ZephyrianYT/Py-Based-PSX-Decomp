@@ -365,9 +365,9 @@ def ascii_map(grid) -> str:
 
 # ---------------------------------------------------------------- preview
 
-def preview(model: Model, path: str, kind: str, scale: int = 2) -> dict:
-    """Render the model at 320x240 through ref/tools/raster.py with PS1 rules,
-    fog matching the background colour, and save a PNG."""
+def render_preview(model: Model, kind: str):
+    """Render the model at 320x240 through ref/tools/raster.py with PS1 rules and
+    fog matching the background colour. Returns (Framebuffer, stats)."""
     from .raster import Camera, Framebuffer, RenderSettings, render_mesh
 
     xs = [v[0] for v in model.vertices]
@@ -383,6 +383,12 @@ def preview(model: Model, path: str, kind: str, scale: int = 2) -> dict:
         settings = RenderSettings(fog=(fog, 1500, 7000), z_max=12000, near=48)
     fb = Framebuffer(320, 240, clear=fog)
     stats = render_mesh(fb, model.to_raster_meshes(), cam, settings)
+    return fb, stats
+
+
+def preview(model: Model, path: str, kind: str, scale: int = 2) -> dict:
+    """Render the preview and save it as a PNG; returns render stats."""
+    fb, stats = render_preview(model, kind)
     fb.save_png(path, scale=scale)
     return stats
 

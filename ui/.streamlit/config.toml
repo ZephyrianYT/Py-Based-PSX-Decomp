@@ -1,0 +1,15 @@
+[theme]
+base = "dark"
+primaryColor = "#4FB3FF"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+# Uploads are parsed in memory; PS1 files are small.
+maxUploadSize = 64
+headless = true
