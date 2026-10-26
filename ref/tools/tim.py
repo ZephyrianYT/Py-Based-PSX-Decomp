@@ -120,6 +120,36 @@ def read_tim(data: bytes, offset: int = 0) -> TimImage:
     return TimImage(pmode, image, clut)
 
 
+# ---------------------------------------------------------------- addressing
+#
+# A textured primitive does not name a texture file. It names WHERE in VRAM
+# the texels are: a texture page (TSB/TPAGE), a palette position (CBA), and
+# U,V counted from the page's top-left corner. These helpers compute those
+# values from the VRAM position a TIM records (see ref/hardware/gpu.md).
+
+def tim_tpage(tim: TimImage) -> int:
+    """TPAGE/TSB value: page x (VRAM x / 64) in bits 0-3, page y (VRAM y / 256)
+    in bit 4, colour depth (0 4-bit, 1 8-bit, 2 15-bit) in bits 7-8."""
+    return ((tim.pmode & 3) << 7) | ((tim.image.y // 256) << 4) | (tim.image.x // 64)
+
+
+def tim_cba(tim: TimImage) -> int:
+    """CBA value: palette x / 16 in bits 0-5, palette y in bits 6-14 (0 if no CLUT)."""
+    if tim.clut is None:
+        return 0
+    return (tim.clut.y << 6) | (tim.clut.x // 16)
+
+
+def tim_uv_origin(tim: TimImage) -> tuple[int, int]:
+    """Where the image starts inside its texture page, in texels.
+
+    A page is 64 VRAM halfwords wide; a halfword holds 4 texels at 4-bit,
+    2 at 8-bit, 1 at 15-bit, so the same VRAM offset is a different U.
+    """
+    per_hw = {PMODE_4BIT: 4, PMODE_8BIT: 2}.get(tim.pmode, 1)
+    return (tim.image.x % 64) * per_hw, tim.image.y % 256
+
+
 def tim_size(tim: TimImage) -> int:
     """Byte size of the TIM as written by write_tim."""
     n = 8 + 12 + len(tim.image.data) * 2

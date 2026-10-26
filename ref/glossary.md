@@ -10,6 +10,8 @@
 | **Affine mapping** | Texture coordinates interpolated linearly in screen space, without perspective division | [visual-signature.md](look/visual-signature.md) |
 | **AVSZ3 / AVSZ4** | GTE commands that average 3 or 4 depths into an OT index | [gte.md](hardware/gte.md) |
 | **BK** | GTE background (ambient) colour | [gte.md](hardware/gte.md) |
+| **CPE** | Psy-Q chunked load format for development builds | [exe-and-disc.md](formats/exe-and-disc.md) |
+| **ECOFF** | MIPS object/executable format of GCC 2.x. Used for Net Yaroze programs. | [exe-and-disc.md](formats/exe-and-disc.md) |
 | **CBA** | CLUT address field in a TMD textured primitive | [tmd.md](formats/tmd.md) |
 | **CLUT** | Colour look-up table (palette) of 16 or 256 entries, stored in VRAM | [gpu.md](hardware/gpu.md) |
 | **COP0 / COP2** | MIPS coprocessors: system control / GTE | [overview.md](hardware/overview.md) |
@@ -28,6 +30,8 @@
 | **IIP** | Mode bit for Gouraud shading | [tmd.md](formats/tmd.md) |
 | **IR0** | GTE register holding the depth-cue factor (0..4096) | [gte.md](hardware/gte.md) |
 | **LGT** | TMD flag meaning "no light-source calculation" | [tmd.md](formats/tmd.md) |
+| **libps** | The Net Yaroze library, resident below `0x80090000` | [net-yaroze.md](sdk/net-yaroze.md) |
+| **Net Yaroze** | Sony's 1996–97 hobbyist PlayStation kit | [net-yaroze.md](sdk/net-yaroze.md) |
 | **libgs / libgpu / libgte** | Sony PsyQ SDK libraries for graphics system, GPU packets, and GTE math | [sources.md](sources.md) |
 | **Mask bit** | Bit 15 of a pixel, usable as a 1-bit stencil | [gpu.md](hardware/gpu.md) |
 | **MDEC** | Motion decoder for FMV (STR) | [overview.md](hardware/overview.md) |
@@ -44,6 +48,8 @@
 | **Semi-transparency** | One of four fixed GPU blend modes | [gpu.md](hardware/gpu.md) |
 | **STP** | Bit 15 of a texel or CLUT entry: semi-transparency flag | [tim.md](formats/tim.md) |
 | **STR** | MDEC video stream file | [exe-and-disc.md](formats/exe-and-disc.md) |
+| **RSD / PLY / MAT / GRP** | Sony's text model source files, linked into TMD by RSDLINK | [rsd.md](formats/rsd.md) |
+| **SIOCONS** | Net Yaroze serial console that downloads programs and data and runs them | [net-yaroze.md](sdk/net-yaroze.md) |
 | **SVECTOR** | libgte struct of 3 int16 values plus a pad. Vertex and normal storage. | [modeling-guide.md](models/modeling-guide.md) |
 | **SZ** | GTE screen depth (unsigned 16-bit) | [gte.md](hardware/gte.md) |
 | **SYSTEM.CNF** | Boot configuration file on a PS1 disc | [exe-and-disc.md](formats/exe-and-disc.md) |
@@ -55,6 +61,7 @@
 | **Texture page (tpage)** | A 256×256-texel window in VRAM that a primitive samples from | [gpu.md](hardware/gpu.md) |
 | **Texture window** | GPU register that wraps or repeats u,v inside a sub-rectangle | [gpu.md](hardware/gpu.md) |
 | **TSB** | Texpage field in a TMD textured primitive | [tmd.md](formats/tmd.md) |
+| **yarexe** | Tool that turns a Net Yaroze program and its SIOCONS script into a standalone PS-X EXE | [net-yaroze.md](sdk/net-yaroze.md) |
 | **VAB / VAG / SEQ / XA** | Sound bank / single sample / sequence / streamed ADPCM | [exe-and-disc.md](formats/exe-and-disc.md) |
 | **Vertex jitter / snapping** | Visible whole-pixel wobble from integer screen coordinates | [visual-signature.md](look/visual-signature.md) |
 | **VRAM** | 1 MB (1024×512×16-bit) GPU memory for framebuffers, textures and CLUTs | [gpu.md](hardware/gpu.md) |

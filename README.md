@@ -61,7 +61,9 @@ switch it off and see the difference:
 Who it is for:
 
 - **Decompilation and modding work**: format specs, a TIM scanner, a TMD parser
-  that refuses to misread unknown data, an executable header reference.
+  that refuses to misread unknown data, an RSD linker, and an identifier for
+  PS-X EXE, ECOFF and CPE executables. All of them are **checked against Sony's
+  own sample files** (see below).
 - **AI agents**: a tagged, indexed, test-checked knowledge base (`ref/AGENTS.md`, `ref/index.json`).
 - **Game developers recreating the style**: shader recipes, drop-in GLSL, asset budgets.
 - **Students and the curious**: heavily commented code that you can step through.
@@ -86,6 +88,9 @@ python -m ref tim png   path/to/file.tim out.png
 python -m ref tim scan  path/to/archive.bin     # find TIMs embedded in any file
 python -m ref tmd info  path/to/model.tmd
 python -m ref tmd obj   path/to/model.tmd --out model.obj
+python -m ref rsd tmd   MODEL.RSD -o MODEL.TMD       # link Sony's RSD text models, like RSDLINK
+python -m ref exe info  path/to/program              # PS-X EXE / Net Yaroze ECOFF / Psy-Q CPE
+python -m ref validate  path/to/netyaroze_demo       # run every parser over real PS1-era files
 ```
 
 The generated `.obj` files carry per-vertex colours and open in Blender or MeshLab.
@@ -193,6 +198,25 @@ ref/
   relative link must resolve, and every doc must have a TL;DR. A bot can rely
   on the index never pointing at a missing file.
 
+### How the tools are checked against reality
+
+The unit tests prove the tools agree with themselves. To prove they agree with
+the real thing, `python -m ref validate` runs every parser over a folder of
+PS1-era files. Run over Sony's Net Yaroze samples
+([gwald/netyaroze_demo](https://github.com/gwald/netyaroze_demo), not copied
+into this repo), it gives:
+
+| Check | Result |
+|-------|--------|
+| TIM textures | 556 / 556 decoded |
+| TMD models | 245 parsed, ~77,000 primitives, 0 skipped. 4 truncated RAM dumps correctly rejected. |
+| RSD → TMD linking | 4 / 4 **byte-identical** to Sony's RSDLINK output |
+| Executables | 321 / 321 identified (Yaroze ECOFF programs and objects, PS-X EXE, CPE) |
+
+This also caught a real bug: OBJ exports of TMD models were inside out. The
+sample models showed which way PS1 polygons face (clockwise front in a Y-down
+space), and the fix is now covered by a test.
+
 ### How an AI agent uses it
 
 ```
@@ -250,7 +274,8 @@ something to run.
 | 5 | [`ref/formats/tim.md`](ref/formats/tim.md), [`tmd.md`](ref/formats/tmd.md) | `ref/tools/tim.py`, `ref/tools/tmd.py`, and the round-trip tests in `ref/tests/test_tools.py` | How textures and models sit in files and VRAM |
 | 6 | [`ref/models/modeling-guide.md`](ref/models/modeling-guide.md) | Model something in Blender to the budgets | How to build PS1-style assets |
 | 7 | [`ref/world/world-building.md`](ref/world/world-building.md), [`procedural-recipes.md`](ref/world/procedural-recipes.md) | `python -m ref worldgen dungeon --out d.obj --png d.png`, then read `ref/tools/worldgen.py` | How worlds were structured, and how to generate one |
-| 8 | [`ref/look/recreating-the-look.md`](ref/look/recreating-the-look.md) | `ref/look/shaders/*.glsl` | Bringing it all into a modern engine |
+| 8 | [`ref/sdk/net-yaroze.md`](ref/sdk/net-yaroze.md) | Clone [gwald/netyaroze_demo](https://github.com/gwald/netyaroze_demo), read a demo's `main.c`, and run `python -m ref exe info` and `python -m ref tmd info` on its files | How a real PS1 program is structured, and how its data is laid out in RAM and VRAM |
+| 9 | [`ref/look/recreating-the-look.md`](ref/look/recreating-the-look.md) | `ref/look/shaders/*.glsl` | Bringing it all into a modern engine |
 
 Exercises to try: change `RenderSettings(affine=False)` in a demo scene and
 compare; set `subdiv=1` in the dungeon generator and look for near-plane holes;
@@ -275,9 +300,10 @@ swap the CLUT index when decoding a TIM to make a palette-swapped variant.
     ├── hardware/           overview.md, gpu.md, gte.md
     ├── look/               visual-signature.md, recreating-the-look.md, shaders/, images/
     ├── models/             modeling-guide.md
-    ├── formats/            tim.md, tmd.md, exe-and-disc.md
+    ├── formats/            tim.md, tmd.md, rsd.md, exe-and-disc.md
+    ├── sdk/                net-yaroze.md
     ├── world/              world-building.md, procedural-recipes.md
-    ├── tools/              fixedpoint, raster, tim, tmd, worldgen, pngio, demo
+    ├── tools/              fixedpoint, raster, tim, tmd, rsd, exe, worldgen, validate, pngio, demo
     └── tests/              test_tools.py, test_index.py
 ```
 
@@ -298,7 +324,9 @@ disc image ──► Image Intake ──► Binary Analysis ──► Decompilat
 
 **Image Intake**: accepts `.chd`, `.iso`, or `.zip` and extracts the PSX
 executable. (See [`ref/formats/exe-and-disc.md`](ref/formats/exe-and-disc.md)
-for sector layouts, `SYSTEM.CNF` and the PS-X EXE header.)
+for sector layouts, `SYSTEM.CNF` and the PS-X EXE header. `ref/tools/exe.py`
+identifies PS-X EXE, Net Yaroze ECOFF and Psy-Q CPE files, and finds the entry
+point and load address that **Binary Analysis** needs.)
 
 **Binary Analysis**: planned integration with Ghidra headless mode and
 PSX-specific loaders.
@@ -307,7 +335,8 @@ PSX-specific loaders.
 (Currently stubbed and incomplete.)
 
 **Asset Extraction**: identifies textures, TIM files, audio banks, and other
-data. (Reference parsers: `ref/tools/tim.py` including `scan`, and `ref/tools/tmd.py`.)
+data. (Reference parsers: `ref/tools/tim.py` including `scan`, `ref/tools/tmd.py`
+and `ref/tools/rsd.py`, validated on Sony's sample files.)
 
 **Modernization Hooks**: conceptual modules for resolution scaling, texture
 replacement, input remapping, and runtime patches. (See
@@ -332,7 +361,7 @@ shape the direction.
 
 - [ ] Replace placeholder modules with real toolchain integrations
 - [ ] Implement Ghidra headless workflows
-- [ ] Add PSX asset parsers (*started: TIM and TMD in `ref/tools/`*)
+- [ ] Add PSX asset parsers (*started: TIM, TMD, RSD and executables in `ref/tools/`, validated on real files*)
 - [ ] Build a minimal modern runtime layer
 - [ ] Create a reproducible build pipeline (*started: `Dockerfile`*)
 - [ ] Document internal formats and memory maps (*started: `ref/hardware/`, `ref/formats/`*)

@@ -24,7 +24,9 @@ also a runnable Python demonstration.
 | Models | [`models/modeling-guide.md`](models/modeling-guide.md) | Polygon and texture budgets, topology, vertex colour, rigid-segment animation |
 | Formats | [`formats/tmd.md`](formats/tmd.md) | TMD 3D model file format, byte by byte |
 | Formats | [`formats/tim.md`](formats/tim.md) | TIM texture/image file format, byte by byte |
-| Formats | [`formats/exe-and-disc.md`](formats/exe-and-disc.md) | PS-X EXE header, SYSTEM.CNF, CD sector modes, other common asset formats |
+| Formats | [`formats/rsd.md`](formats/rsd.md) | RSD/PLY/MAT/GRP, Sony's text model source, and how RSDLINK linked it |
+| Formats | [`formats/exe-and-disc.md`](formats/exe-and-disc.md) | PS-X EXE header (Sony's EXEC fields), ECOFF and CPE executables, SYSTEM.CNF, CD sector modes, other asset formats |
+| SDK | [`sdk/net-yaroze.md`](sdk/net-yaroze.md) | Net Yaroze: toolchain, memory map, the official libgs frame loop, FAQ limits, recognising Yaroze programs |
 | World | [`world/world-building.md`](world/world-building.md) | How shipped games built and streamed worlds (grids, rooms, portals, fog, LOD, pre-rendered backgrounds) |
 | World | [`world/procedural-recipes.md`](world/procedural-recipes.md) | Step-by-step algorithms for generating PS1-style worlds |
 | Support | [`glossary.md`](glossary.md) | Short definitions of every term used here |
@@ -39,7 +41,10 @@ Python 3.9+ standard library only: no NumPy and no Pillow.
 | `tools/fixedpoint.py` | GTE-style fixed-point math: 1.3.12 matrices, RTPS-like projection, NCLIP, AVSZ3, depth cue |
 | `tools/raster.py` | A small software rasteriser that follows PS1 rules: integer vertices, affine UVs, no Z-buffer, ordering table, 15-bit colour plus 4x4 dither |
 | `tools/tim.py` | Read and write TIM files, and convert them to RGBA and PNG |
-| `tools/tmd.py` | Read and write TMD files, and export them to OBJ |
+| `tools/tmd.py` | Read and write TMD files (polygons, lines, 3D sprites), and export them to OBJ |
+| `tools/rsd.py` | Read RSD/PLY/MAT/GRP and link them to TMD, byte-identical to Sony's RSDLINK on the samples |
+| `tools/exe.py` | Identify PS-X EXE / ECOFF / CPE executables. Entry point, load address, sections. |
+| `tools/validate.py` | Run every parser over a folder of real PS1-era files and report the results |
 | `tools/worldgen.py` | PS1-style world generators: tile terrain with baked vertex colour, and a grid dungeon |
 | `tools/pngio.py` | Minimal PNG writer (zlib only) |
 | `tools/demo.py` | Renders the side-by-side comparison images |
@@ -53,6 +58,9 @@ python -m ref worldgen terrain --out ref_out/terrain.obj --png ref_out/terrain.p
 python -m ref worldgen dungeon --out ref_out/dungeon.obj
 python -m ref tim info path/to/file.tim
 python -m ref tmd obj path/to/model.tmd --out model.obj
+python -m ref rsd tmd MODEL.RSD -o MODEL.TMD     # link Sony RSD text models
+python -m ref exe info path/to/program           # PS-X EXE / ECOFF / CPE
+python -m ref validate path/to/netyaroze_demo    # check every parser on real files
 python -m ref test                              # self-tests
 ```
 
@@ -67,6 +75,20 @@ docker run --rm -v "$PWD/ref_out:/out" --user "$(id -u):$(id -g)" psx-ref demo -
 
 Every tool module is commented for learners. Read `tools/raster.py` top to
 bottom for a guided tour of the PS1 rendering pipeline.
+
+## Validated against real data
+
+The format tools were run over Sony's Net Yaroze samples
+(`github.com/gwald/netyaroze_demo`, not copied here) with
+`python -m ref validate PATH`:
+
+| Check | Result |
+|-------|--------|
+| TIM | 556 / 556 parsed and decoded |
+| TMD | 245 parsed, ~77,000 primitives in 15 kinds, **0 skipped**. The 4 rejected files are truncated RAM dumps. |
+| TMD winding | 96% of lit polygons follow the clockwise-front rule. This exposed and fixed an inside-out OBJ export. |
+| RSD | 19 / 19 linked. **4 / 4 byte-identical** to Sony's RSDLINK output. |
+| Executables | 321 / 321 read: 218 Yaroze ECOFF programs, 91 objects, 10 PS-X EXEs, 2 CPE |
 
 ## Scope and honesty
 

@@ -54,23 +54,53 @@ If `SYSTEM.CNF` is missing, the BIOS boots `cdrom:\PSX.EXE;1`.
 
 ## PS-X EXE header (2048 bytes) [FMT]
 
-| Off | Size | Field |
-|-----|------|-------|
-| 0x000 | 8 | Magic `"PS-X EXE"` |
-| 0x010 | 4 | Initial PC (entry point) |
-| 0x014 | 4 | Initial GP (`r28`) |
-| 0x018 | 4 | Destination address in RAM (the `t_addr` load address) |
-| 0x01C | 4 | File size excluding the header (a multiple of 2048) |
-| 0x020 | 8 | Data section start and size (usually 0) |
-| 0x028 | 8 | BSS start and size (zeroed by the loader) |
-| 0x030 | 4 | Initial SP base (0 = use the BIOS default / SYSTEM.CNF) |
-| 0x034 | 4 | SP offset |
-| 0x04C | … | ASCII region marker, for example `Sony Computer Entertainment Inc. for North America area` |
+The fields from `0x10` onwards are Sony's `EXEC` structure (Net Yaroze
+User's Guide, "Kernel Management"). The names in the second column are Sony's.
 
-To disassemble, load the bytes from file offset `0x800` at the destination
-address, with the CPU set to **MIPS R3000, little-endian**. In Ghidra, use a
-MIPS:LE:32 default language (or a PSX loader plugin) and the entry point from
-offset `0x010`.
+| Off | EXEC field | Meaning |
+|-----|------------|---------|
+| 0x000 | (magic) | `"PS-X EXE"` (8 bytes) |
+| 0x010 | `pc0` | Entry point |
+| 0x014 | `gp0` | Initial GP (`r28`) |
+| 0x018 | `t_addr` | RAM address of text + initialised data (where the file body is copied) |
+| 0x01C | `t_size` | Size of text + initialised data in bytes |
+| 0x020 | `d_addr`, `d_size` | Reserved for system use (usually 0) |
+| 0x028 | `b_addr`, `b_size` | BSS start and size (zeroed by the loader) |
+| 0x030 | `s_addr` | Stack base (0 = keep the BIOS default / SYSTEM.CNF) |
+| 0x034 | `s_size` | Stack size |
+| 0x038 | `sp, fp, gp, ret, base` | Register save area used by `Exec()` |
+| 0x04C | (marker) | ASCII marker, for example `Sony Computer Entertainment Inc. for North America area` |
+
+* Sony documents the body as a multiple of 2048 bytes. The BIOS copies
+  `t_size` bytes, and some linkers leave the last sector unpadded.
+  `ref/tools/exe.py` reports both `complete` (the file holds `t_size` bytes)
+  and `padded`.
+* The marker is free text after the region string's position. Converters
+  sign their output here. PS-X EXEs made from Net Yaroze programs by
+  **yarexe** read `YAREXE - vN …`, load at `0x80010000`, and contain the
+  libps library as well as the program.
+
+To disassemble, load the bytes from file offset `0x800` at `t_addr`, with
+the CPU set to **MIPS R3000, little-endian**. In Ghidra, use a MIPS:LE:32
+default language (or a PSX loader plugin) and the entry point `pc0`.
+
+## Other executable containers [FMT]
+
+| Format | Magic | Where you meet it | What to read |
+|--------|-------|-------------------|--------------|
+| **ECOFF** (MIPS little-endian) | bytes `62 01` | Net Yaroze programs (`a.out`, no extension) and `.o` objects, built by GCC 2.x | 20-byte file header (magic, section count, timestamp, symbol pointer, symbol count, optional-header size, flags; flag `0x0002` = executable), then a 56-byte a.out header (magic `0413` ZMAGIC, text/data/bss sizes, **entry**, **text start**, data start, bss start, register masks, **gp value**), then 40-byte section headers (`.text`, `.rdata`, `.data`, `.sdata`, `.sbss`, `.bss`, …) |
+| **CPE** | `CPE\x01` | Psy-Q development builds, loaded over a debug link | A sequence of chunks: `0x01` load (u32 address, u32 length, bytes), `0x03` set register (u16 register, u32 value; register `0x90` = PC), `0x08` select unit (1 byte), `0x00` end |
+
+A Net Yaroze ECOFF program is only half a program: Sony's libps must already
+be resident below `0x80090000`. See [`../sdk/net-yaroze.md`](../sdk/net-yaroze.md).
+
+```bash
+python -m ref exe info FILE     # identifies PS-X EXE / ECOFF / CPE and prints entry, load address, sections
+```
+
+Checked on the Net Yaroze samples: all 321 executables are read, namely
+218 Yaroze ECOFF programs, 91 ECOFF objects, 10 PS-X EXEs and 2 CPE files.
+Both CPE files end exactly on their end chunk.
 
 ## Common asset formats [FMT] [TYP]
 
@@ -81,8 +111,8 @@ offset `0x010`.
 | `.HMD` | Hierarchical model and animation (libgs) | Later SDKs |
 | `.PMD` | Pre-built primitive packets | Rare |
 | `.TOD` | Animation for TMD objects | libgs |
-| `.VAB` (`pBAV`), `.VH` + `.VB` | Instrument bank (header + ADPCM bodies) | SPU sound |
-| `.VAG` (`VAGp`) | Single ADPCM sample | Big-endian header |
+| `.VAB` (`pBAV`), `.VH` + `.VB` | Instrument bank (header + ADPCM bodies) | Up to 128 programs × 16 tones and 254 samples. The VH stays in RAM and the VB goes to SPU RAM. |
+| `.VAG` (`VAGp`) | Single ADPCM sample | 48-byte big-endian header (version, size, sample rate, name) |
 | `.SEQ` (`pQES`) / `.SEP` | MIDI-like sequence | Played by libsnd |
 | `.XA` | Interleaved Form 2 ADPCM audio streams | Needs raw 2352-byte sectors |
 | `.STR` | MDEC video (+ XA audio) | Needs raw sectors. Frame headers are in the data. |
@@ -93,5 +123,7 @@ offset `0x010`.
 
 The `PSX Decomp Studio` pipeline (see the root README) starts with **Image
 Intake** and **Asset Extraction**. This file lists what those stages must
-recognise. `ref/tools/tim.py scan` is a minimal reference implementation of
-signature scanning for one format.
+recognise. Reference implementations: `ref/tools/exe.py` (identify the
+executable and find its entry point and load address), `ref/tools/tim.py scan`
+(signature scanning for embedded textures), `ref/tools/tmd.py` and
+`ref/tools/rsd.py` (models).

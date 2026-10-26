@@ -91,7 +91,8 @@ per frame:
 * Set the **fog end at or slightly before the cull distance**, so culled geometry
   is already fully fogged when it disappears.
 * Use **separate OTs or OT ranges** for sky (drawn first), world,
-  characters/effects, and HUD (drawn last).
+  characters/effects, and HUD (drawn last). Sony's libgs supports this directly:
+  `GsSortOt` merges a local OT into a global one at a chosen depth. [SDK]
 
 ## 3. Collision is separate from rendering [TYP]
 

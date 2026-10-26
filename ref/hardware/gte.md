@@ -127,6 +127,16 @@ FC to its fog or sky colour, so distant geometry fades into the background,
 example. Because the blend is per vertex and Gouraud-interpolated, large
 polygons fog unevenly.
 
+### How Sony's library set the fog [SDK]
+
+libgs exposes the depth cue as `GsSetFogParam` (`dqa`, `dqb`, far colour), and
+it only takes effect with `GsSetLightMode(1)`. The Library Reference's recipe
+is `dqa = −df·4096/64/h` and `dqb = 1.25·4096²`, where `df` is the distance of total
+fog. Put through the RTPS formula above, that gives
+`IR0 = 5120 − 1024·df/SZ`, so the fog **starts at df/5 and is total at df**,
+linear in 1/z. `fixedpoint.libgs_fog_params(df, h)` implements the recipe, and
+a test checks those end points.
+
 ## Python model
 
 `ref/tools/fixedpoint.py` implements these formulas:

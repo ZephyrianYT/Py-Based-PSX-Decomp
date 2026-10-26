@@ -67,14 +67,47 @@ bits  4-0     red   (0-31)
   `10 00 00 00` + flags `{00,01,02,03,08,09}` `00 00 00` signature, then check
   that the BNUM sizes are consistent. `tools/tim.py scan` does this.
 * 24-bit TIMs are usually full-screen stills or video frames. They cannot be
-  used as textures by the GPU.
+  used as textures by the GPU. Pixels pack as bytes R0 G0 B0 R1 G1 B1 …, so
+  three halfwords hold two pixels.
+
+## From a TIM to a primitive's texture fields [HW]
+
+A model or sprite never names a TIM file. It names the VRAM position the TIM
+was loaded to. `tools/tim.py` computes those fields:
+
+| Helper | Value |
+|--------|-------|
+| `tim_tpage(t)` | TPAGE/TSB: `x/64` in bits 0–3, `y/256` in bit 4, colour depth in bits 7–8 |
+| `tim_cba(t)` | CBA: CLUT `x/16` in bits 0–5, CLUT `y` in bits 6–14 |
+| `tim_uv_origin(t)` | Where the image starts inside its page, in texels: `(x mod 64) × (4, 2 or 1)`, `y mod 256` |
+
+RSDLINK used exactly these to turn image-relative MAT U,V into TMD values
+(see [`rsd.md`](rsd.md)).
+
+## Errata in Sony's 1997 File Formats manual
+
+The Net Yaroze *File Formats* manual (1997) has two slips in its TIM chapter.
+Agents reading the original should know about them:
+
+* **Flag bits**: the prose says PMODE is bits 0–3 and CF is bit 4, but the
+  manual's own figure, every real file, psx-spx and this parser put **PMODE in
+  bits 0–2 and CF in bit 3**. In the Net Yaroze samples, every one of the 556
+  TIMs has a flag byte of `0x08`, `0x09`, `0x02` or `0x03`.
+* **16-bit pixel figure**: it labels bits 14–10 as G and 9–5 as B. The CLUT
+  entry figure in the same manual has the correct order: **B in bits 14–10,
+  G in bits 9–5, R in bits 4–0**.
+
+## Validation against real files
+
+`python -m ref.tools.validate` over the Net Yaroze samples parses and decodes
+**556 of 556** TIMs: 292 at 4-bit, 155 at 8-bit, 106 at 15-bit and 3 at 24-bit.
 
 ## Tool usage
 
 ```bash
-python -m ref.tools.tim info   file.tim          # header summary
-python -m ref.tools.tim png    file.tim out.png  # decode (CLUT 0) to PNG
-python -m ref.tools.tim scan   blob.bin          # find embedded TIMs by signature
+python -m ref tim info   file.tim          # header summary
+python -m ref tim png    file.tim out.png  # decode (CLUT 0) to PNG
+python -m ref tim scan   blob.bin          # find embedded TIMs by signature
 ```
 
 ```python

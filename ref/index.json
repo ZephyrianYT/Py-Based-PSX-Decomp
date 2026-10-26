@@ -7,7 +7,8 @@
     "FMT": "file-format fact (Sony file format docs)",
     "TYP": "typical practice / approximate",
     "CASE": "publicly documented technique of a specific game",
-    "SIM": "behaviour of this repository's Python models"
+    "SIM": "behaviour of this repository's Python models",
+    "SDK": "behaviour of Sony's libraries (libps/libgs) as documented in the Net Yaroze manuals and FAQ"
   },
   "docs": [
     {
@@ -165,7 +166,11 @@
         "format",
         "clut",
         "palette",
-        "vram"
+        "vram",
+        "tpage",
+        "cba",
+        "errata",
+        "validation"
       ],
       "summary": "Byte layout of TIM files, pixel modes, colour word, scanning tips."
     },
@@ -178,9 +183,14 @@
         "mesh",
         "format",
         "primitive",
-        "libgs"
+        "libgs",
+        "winding",
+        "coordinates",
+        "lines",
+        "sprites",
+        "validation"
       ],
-      "summary": "Byte layout of TMD files, object table, primitive header, generic data layout rule with ilen table."
+      "summary": "Byte layout of TMD files: object table, primitive header, polygon/line/sprite layouts, winding and axes; verified against Sony's manual and 245 real files."
     },
     {
       "path": "formats/exe-and-disc.md",
@@ -199,9 +209,26 @@
         "executable",
         "vab",
         "seq",
-        "ghidra"
+        "ghidra",
+        "ecoff",
+        "cpe",
+        "exec structure"
       ],
-      "summary": "Disc image types, CD sector layouts, SYSTEM.CNF, PS-X EXE header, list of common asset formats."
+      "summary": "Disc image types, CD sector layouts, SYSTEM.CNF, PS-X EXE header (Sony EXEC fields), ECOFF and CPE executables, common asset formats."
+    },
+    {
+      "path": "formats/rsd.md",
+      "title": "RSD text model format",
+      "tags": [
+        "rsd",
+        "ply",
+        "mat",
+        "grp",
+        "rsdlink",
+        "model source",
+        "format"
+      ],
+      "summary": "Sony's text model source (RSD/PLY/MAT/GRP) and how RSDLINK linked it into TMD; tools/rsd.py matches RSDLINK byte for byte."
     },
     {
       "path": "world/world-building.md",
@@ -238,6 +265,28 @@
         "budget"
       ],
       "summary": "Algorithms for PS1-style terrain and dungeons (implemented in tools/worldgen.py), culling, OT bucketing, sky dome, budget check."
+    },
+    {
+      "path": "sdk/net-yaroze.md",
+      "title": "Net Yaroze SDK",
+      "tags": [
+        "net yaroze",
+        "sdk",
+        "libps",
+        "libgs",
+        "siocons",
+        "toolchain",
+        "gcc",
+        "ecoff",
+        "frame loop",
+        "ordering table",
+        "fog",
+        "memory map",
+        "yarexe",
+        "psxsdk",
+        "decompilation"
+      ],
+      "summary": "Sony's hobbyist kit: toolchain, SIOCONS scripts, memory map, the libgs frame loop, OT/fog/subdivision APIs, FAQ limits, how to recognise and run Yaroze programs."
     },
     {
       "path": "glossary.md",
@@ -307,6 +356,41 @@
       "summary": "Read, write and OBJ-export TMD models."
     },
     {
+      "module": "ref.tools.rsd",
+      "path": "tools/rsd.py",
+      "tags": [
+        "rsd",
+        "rsdlink",
+        "model"
+      ],
+      "run": "python -m ref rsd tmd MODEL.RSD -o MODEL.TMD",
+      "summary": "Read RSD/PLY/MAT/GRP and link to TMD like Sony's RSDLINK (byte-exact on the samples), or export OBJ."
+    },
+    {
+      "module": "ref.tools.exe",
+      "path": "tools/exe.py",
+      "tags": [
+        "executable",
+        "ps-x exe",
+        "ecoff",
+        "cpe",
+        "entry point"
+      ],
+      "run": "python -m ref exe info FILE",
+      "summary": "Identify PS-X EXE / ECOFF / CPE files and read entry point, load address and sections."
+    },
+    {
+      "module": "ref.tools.validate",
+      "path": "tools/validate.py",
+      "tags": [
+        "validation",
+        "corpus",
+        "real files"
+      ],
+      "run": "python -m ref validate PATH",
+      "summary": "Run every parser over a folder of real PS1-era files and report the results."
+    },
+    {
       "module": "ref.tools.worldgen",
       "path": "tools/worldgen.py",
       "tags": [
@@ -346,7 +430,7 @@
         "docker"
       ],
       "run": "python -m ref --help",
-      "summary": "Single command-line entry point: demo, worldgen, tim, tmd, jitter, test, docs."
+      "summary": "Single command-line entry point: demo, worldgen, tim, tmd, rsd, exe, validate, jitter, test, docs."
     }
   ]
 }

@@ -24,6 +24,7 @@ Statements in these docs carry an implicit or explicit confidence level:
 | **[FMT]** | File-format fact, as documented in Sony's SDK file format docs | State it as fact, and still validate against real files |
 | **[TYP]** | Typical practice or approximate budget | Say "typically" or "roughly" |
 | **[CASE]** | Publicly documented technique from a specific game | Attribute it ("Tomb Raider used ...") and avoid inventing details beyond it |
+| **[SDK]** | Behaviour of Sony's libraries (libps/libgs) as documented in the Net Yaroze manuals and FAQ | State it as library behaviour, not hardware behaviour. Other SDKs may differ. |
 | **[SIM]** | Behaviour of this repository's Python models | Say it is a simulation |
 
 When a doc does not mark a statement, treat tables of registers, bits and
@@ -54,7 +55,12 @@ entries in `ref/sources.md`.
 | "Why do textures wobble or warp?" | `look/visual-signature.md` § Affine texture warping |
 | "Why do vertices jitter?" | `look/visual-signature.md` § Vertex snapping, then `hardware/gte.md` |
 | "Parse this .TMD / .TIM" | `formats/tmd.md`, `formats/tim.md`, `tools/tmd.py`, `tools/tim.py` |
-| "Identify what's in this disc / EXE" | `formats/exe-and-disc.md` |
+| "Identify what's in this disc / EXE" | `formats/exe-and-disc.md`, then run `python -m ref exe info FILE` |
+| "Is this a Net Yaroze program? Where are its assets?" | `sdk/net-yaroze.md` |
+| "How was a real PS1 program structured (frame loop, OT, fog)?" | `sdk/net-yaroze.md` § The libgs frame loop |
+| "Convert / inspect an RSD (PLY/MAT) model" | `formats/rsd.md`, `tools/rsd.py` |
+| "Is this model inside out / upside down?" | `formats/tmd.md` § Coordinates and winding |
+| "Check the tools against real files" | `python -m ref validate PATH` |
 | "Model a character in PS1 style" | `models/modeling-guide.md` |
 | "Generate a PS1-style level" | `world/procedural-recipes.md`, `tools/worldgen.py` |
 | "How did game X handle draw distance?" | `world/world-building.md` |

@@ -9,7 +9,7 @@ import unittest
 import zlib
 
 from ref.tools import fixedpoint as fx
-from ref.tools import raster, tim, tmd, worldgen
+from ref.tools import exe, raster, rsd, tim, tmd, worldgen
 from ref.tools.pngio import encode_png, scale_nearest
 
 
@@ -193,23 +193,209 @@ class TmdTest(unittest.TestCase):
         self.assertEqual(o.vertices[3], (100, 100, 0))
 
     def test_unknown_primitive_is_skipped_not_misread(self):
-        # Insert a line primitive (CODE 010, ilen 2) at the start of the primitive list.
+        # Insert a primitive of an undefined kind (CODE 100, mode 0x80) with ilen 2
+        # at the start of the primitive list.
         raw = bytearray(tmd.write_tmd(self._sample()))
         prim_off = 12 + 28
-        line = struct.pack("<BBBB", 3, 2, 0, 0x40) + b"\x00" * 8
+        unknown = struct.pack("<BBBB", 3, 2, 0, 0x80) + b"\x00" * 8
         vtop, nv, ntop, nn, ptop, nprim, scale = struct.unpack_from("<IIIIIIi", raw, 12)
-        raw = raw[:prim_off] + line + raw[prim_off:]
-        # vertex and normal lists follow the primitives, so they move by len(line)
-        struct.pack_into("<IIIIIIi", raw, 12, vtop + len(line), nv, ntop + len(line), nn, ptop, nprim + 1, scale)
+        raw = raw[:prim_off] + unknown + raw[prim_off:]
+        # vertex and normal lists follow the primitives, so they move by len(unknown)
+        struct.pack_into("<IIIIIIi", raw, 12, vtop + len(unknown), nv, ntop + len(unknown), nn, ptop, nprim + 1, scale)
         t = tmd.read_tmd(bytes(raw))
         self.assertEqual(len(t.objects[0].primitives), 6)
-        self.assertEqual(t.objects[0].skipped, [(0x40, 0, 2)])
+        self.assertEqual(t.objects[0].skipped, [(0x80, 0, 2)])
 
     def test_obj_export(self):
         obj = tmd.to_obj(tmd.read_tmd(tmd.write_tmd(self._sample())))
         self.assertIn("v 100 -100 0", obj)
         self.assertEqual(obj.count("\nf "), 6)
         self.assertIn("usemtl tsb_0005_cba_7801", obj)
+
+
+class TmdSonyManualTest(unittest.TestCase):
+    """Cases taken from Sony's Net Yaroze File Formats manual and the sample corpus."""
+
+    def test_line_and_sprite_sizes_match_manual(self):
+        # (mode, ilen, olen) as printed in the manual's packet tables
+        for mode, ilen, olen in [(0x40, 2, 3), (0x50, 3, 4), (0x64, 3, 5), (0x6C, 2, 4), (0x74, 2, 4), (0x7C, 2, 4)]:
+            self.assertEqual((tmd.expected_ilen(mode, tmd.LGT), tmd.expected_olen(mode, tmd.LGT)), (ilen, olen), hex(mode))
+        # unlit polygons as the manual prints them (TGE set, LGT flag)
+        for mode, ilen, olen in [(0x21, 3, 4), (0x31, 5, 6), (0x25, 6, 7), (0x35, 8, 9),
+                                 (0x29, 3, 5), (0x39, 6, 8), (0x2D, 7, 9), (0x3D, 10, 12)]:
+            self.assertEqual((tmd.expected_ilen(mode, tmd.LGT), tmd.expected_olen(mode, tmd.LGT)), (ilen, olen), hex(mode))
+        # lit gradation (GRD) polygons
+        for mode, ilen, olen in [(0x20, 5, 6), (0x30, 6, 6), (0x28, 7, 8), (0x38, 8, 8)]:
+            self.assertEqual((tmd.expected_ilen(mode, tmd.GRD), tmd.expected_olen(mode, tmd.GRD)), (ilen, olen), hex(mode))
+
+    def test_sprite_packet_layout(self):
+        # [vertex0 | TSB] [U V | CBA] [W | H], built by hand from the manual's figure
+        raw = struct.pack("<HHBBHHH", 2, 0x0105, 16, 32, 0x7801, 40, 24)
+        p = tmd._decode_sprite(0x64, tmd.LGT, raw)
+        self.assertEqual((p.vertices, p.tsb, p.uvs, p.cba, p.size), ([2], 0x0105, [(16, 32)], 0x7801, (40, 24)))
+        self.assertEqual(tmd._decode_sprite(0x74, tmd.LGT, raw[:8]).size, (8, 8))
+
+    def test_lines_and_sprites_roundtrip(self):
+        verts = [(0, 0, 0), (100, 0, 0)]
+        prims = [
+            tmd.Primitive(tmd.make_line_mode(), tmd.LGT, [0, 1], colors=[(255, 0, 0)]),
+            tmd.Primitive(tmd.make_line_mode(gouraud=True), tmd.LGT, [1, 0], colors=[(1, 2, 3), (4, 5, 6)]),
+            tmd.Primitive(tmd.make_sprite_mode(16, 16), tmd.LGT, [1], uvs=[(8, 9)], cba=3, tsb=4, size=(16, 16)),
+            tmd.Primitive(tmd.make_sprite_mode(40, 20, semi=True), tmd.LGT, [0], uvs=[(1, 2)], cba=5, tsb=6, size=(40, 20)),
+        ]
+        o = tmd.read_tmd(tmd.write_tmd([tmd.TmdObject(verts, [], prims)])).objects[0]
+        self.assertEqual(o.skipped, [])
+        self.assertEqual([p.name for p in o.primitives], ["LINE", "GLINE", "SPRITE 16x16", "SPRITE 40x20"])
+        self.assertEqual(o.primitives[1].colors, [(1, 2, 3), (4, 5, 6)])
+        self.assertEqual(o.primitives[3].size, (40, 20))
+        obj = tmd.to_obj(tmd.read_tmd(tmd.write_tmd([tmd.TmdObject(verts, [], prims)])))
+        self.assertIn("l 1 2", obj)
+        self.assertIn("p 2", obj)
+
+    def test_obj_export_faces_point_outward(self):
+        # A polygon facing the viewer (-Z) in TMD space: clockwise on a Y-down
+        # screen, authored normal (0, 0, -4096). This is the corpus convention.
+        verts = [(0, 0, 0), (100, 0, 0), (0, 100, 0)]   # (0,0) -> (100,0) -> (0,100): clockwise with Y down
+        prim = tmd.Primitive(tmd.make_mode(), 0, [0, 1, 2], normals=[0, 0, 0], colors=[(9, 9, 9)])
+        data = tmd.write_tmd([tmd.TmdObject(verts, [(0, 0, -4096)], [prim])])
+        for flip in (True, False):
+            text = tmd.to_obj(tmd.read_tmd(data), flip_y=flip)
+            vs = [tuple(map(float, l.split()[1:4])) for l in text.splitlines() if l.startswith("v ")]
+            vn = [tuple(map(float, l.split()[1:4])) for l in text.splitlines() if l.startswith("vn ")][0]
+            face = [int(tok.split("/")[0]) - 1 for tok in [l for l in text.splitlines() if l.startswith("f ")][0].split()[1:]]
+            a, b, c = (vs[i] for i in face)
+            u = [b[k] - a[k] for k in range(3)]
+            w = [c[k] - a[k] for k in range(3)]
+            cross = (u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
+            self.assertGreater(sum(cross[k] * vn[k] for k in range(3)), 0, f"flip_y={flip}: OBJ face points inward")
+
+    def test_truncated_file_is_a_value_error(self):
+        data = tmd.write_tmd([tmd.TmdObject([(0, 0, 0)] * 4, [], [])])
+        with self.assertRaises(ValueError):
+            tmd.read_tmd(data[:-8])
+
+    def test_fixp_ram_dump(self):
+        # FIXP=1: pointers are RAM addresses; the object table sat at 0x8009500C.
+        good = tmd.write_tmd([tmd.TmdObject([(1, 2, 3)], [(0, 0, 4096)],
+                                            [tmd.Primitive(tmd.make_mode(), 0, [0, 0, 0], normals=[0, 0, 0], colors=[(1, 1, 1)])])])
+        raw = bytearray(good)
+        struct.pack_into("<I", raw, 4, 1)
+        vtop, nv, ntop, nn, ptop, np_, sc = struct.unpack_from("<IIIIIIi", raw, 12)
+        base = 0x8009500C
+        struct.pack_into("<IIIIIIi", raw, 12, vtop + base, nv, ntop + base, nn, ptop + base, np_, sc)
+        o = tmd.read_tmd(bytes(raw)).objects[0]
+        self.assertEqual(o.vertices, [(1, 2, 3)])
+        self.assertEqual(len(o.primitives), 1)
+
+
+class TimAddressingTest(unittest.TestCase):
+    def test_tpage_cba_uv(self):
+        t4 = tim.read_tim(tim.write_tim(0, 8, 2, [0] * 16, [[0] * 16], image_xy=(704 + 10, 256 + 3), clut_xy=(32, 481)))
+        self.assertEqual(tim.tim_tpage(t4), (0 << 7) | (1 << 4) | 11)
+        self.assertEqual(tim.tim_cba(t4), (481 << 6) | 2)
+        self.assertEqual(tim.tim_uv_origin(t4), (10 * 4, 3))
+        t15 = tim.read_tim(tim.write_tim(2, 2, 1, [1, 2], image_xy=(640 + 5, 0)))
+        self.assertEqual(tim.tim_tpage(t15), (2 << 7) | 10)
+        self.assertEqual(tim.tim_cba(t15), 0)
+        self.assertEqual(tim.tim_uv_origin(t15), (5, 0))
+
+
+class RsdTest(unittest.TestCase):
+    def _write(self, d, files):
+        for name, text in files.items():
+            with open(os.path.join(d, name), "wb") as f:
+                f.write(text if isinstance(text, bytes) else text.encode())
+
+    def _model(self, d):
+        self._write(d, {
+            "BOX.RSD": "@RSD940102\nPLY=box.ply\nMAT=box.mat\nGRP=box.grp\nNTEX=1\nTEX[0]=tex.tim\n",
+            "box.ply": ("@PLY940102\n# counts\n4 2 4\n"
+                        "0.5 -0.5 2.5\n-0.5 1.25 0\n10 20 30\n1 1 1\n"
+                        "0 0 -1\n0.6 0.8 0\n"
+                        "0 0 1 2 0 0 0 0 0\n"      # triangle
+                        "1 0 1 3 2 0 1 0 1\n"      # quad
+                        "0 0 1 2 0 0 0 0 0\n"
+                        "2 0 3 0 0 0 0 0 0\n"),    # line
+            "box.mat": ("@MAT940801\n# Number of Items\n4\n"
+                        "0 0 F C 10 20 30\n"
+                        "1 14 G T 0 0 0 7 0 0 7 7 7\n"      # unlit? no: 0x14 = semi(4) + rate 2 (bits 3-5 = 010)
+                        "2 1 F H 0 1 1 2 2 3 3 0 0 10 10 10 20 20 20 30 30 30 0 0 0\n"
+                        "3 0 F C 1 2 3\n"),
+            "BOX.GRP": "@GRP940102\n1\nall 1 4\n0-3\n",
+            "TEX.TIM": tim.write_tim(0, 8, 8, [1] * 64, [[0] * 16], image_xy=(640 + 4, 256 + 8), clut_xy=(16, 480)),
+        })
+        return rsd.read_rsd(os.path.join(d, "BOX.RSD"))
+
+    def test_read_and_link(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = self._model(d)
+            self.assertEqual(len(m.vertices), 4)
+            self.assertEqual(m.groups, {"all": [0, 1, 2, 3]})
+            o = rsd.link(m, scale=2)
+            # half rounds away from zero: 1.0, -1.0, 5.0 / -1, 2.5 -> 3, 0
+            self.assertEqual(o.vertices[0], (1, -1, 5))
+            self.assertEqual(o.vertices[1], (-1, 3, 0))
+            self.assertEqual(o.scale, 1)
+            self.assertEqual(o.normals[1], (2458, 3277, 0))
+            tri, quad, htri, line = o.primitives
+            self.assertEqual((tri.mode, tri.flag, tri.colors), (0x20, 0, [(10, 20, 30)]))
+            # lit, gouraud, textured, semi rate 2 -> TSB bits 5-6; UV offset by the image's place in its page
+            self.assertEqual(quad.mode & 0xFE, 0x3E)
+            self.assertEqual(quad.flag, 0)
+            self.assertEqual(quad.tsb, tim.tim_tpage(m.textures[0]) | (2 << 5))
+            self.assertEqual(quad.cba, (480 << 6) | 1)
+            self.assertEqual(quad.uvs[0], (16, 8))
+            self.assertEqual(quad.colors, [])
+            # unlit textured with per-vertex colours: TGE + IIP, LGT flag, 3 colours
+            self.assertEqual((htri.mode, htri.flag, len(htri.colors)), (0x35, tmd.LGT, 3))
+            self.assertEqual((line.mode, line.vertices), (0x40, [0, 3]))
+
+    def test_tmd_output_reparses(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._model(d)
+            data = rsd.rsd_to_tmd([os.path.join(d, "box.rsd")])   # lower case: DOS-style lookup
+            o = tmd.read_tmd(data).objects[0]
+            self.assertEqual(o.skipped, [])
+            self.assertEqual(len(o.primitives), 4)
+
+
+class ExeTest(unittest.TestCase):
+    def test_psx_exe(self):
+        h = bytearray(0x800)
+        h[:8] = b"PS-X EXE"
+        struct.pack_into("<10I", h, 0x10, 0x80010010, 0x80020000, 0x80010000, 0x800, 0, 0, 0x80010800, 64, 0x801FFF00, 0)
+        h[0x4C:0x4C + 20] = b"Sony Computer Entert"
+        r = exe.read_executable(bytes(h) + b"\0" * 0x800)
+        self.assertEqual((r["kind"], r["entry"], r["load_address"], r["complete"], r["padded"]), ("psx-exe", 0x80010010, 0x80010000, True, True))
+        self.assertFalse(exe.read_psx_exe(bytes(h) + b"\0" * 16)["complete"])
+
+    def test_ecoff_yaroze_app(self):
+        fh = struct.pack("<HHiIiHH", 0x0162, 1, 0, 0, 0, 56, 0x0002)
+        ah = struct.pack("<hhiiiIIIIIIIIII", 0o413, 0, 0x1000, 0x200, 0x40, 0x80140040, 0x80140000, 0x80141000, 0x80141200, 0, 0, 0, 0, 0, 0x80149000)
+        sh = struct.pack("<8sIIiIIIHHi", b".text", 0x80140000, 0x80140000, 0x1000, 0x400, 0, 0, 0, 0, 0x20)
+        r = exe.read_executable(fh + ah + sh)
+        self.assertEqual((r["kind"], r["entry"], r["load_address"], r["net_yaroze_app"]), ("ecoff", 0x80140040, 0x80140000, True))
+        self.assertEqual(r["sections"][0]["name"], ".text")
+
+    def test_cpe(self):
+        body = b"CPE\x01" + b"\x08\x00" + struct.pack("<BHI", 3, 0x90, 0x80010000) + b"\x01" + struct.pack("<II", 0x80010000, 4) + b"abcd" + b"\x00"
+        r = exe.read_executable(body)
+        self.assertEqual((r["entry"], r["load_address"], r["load_bytes"], r["ended_cleanly"]), (0x80010000, 0x80010000, 4, True))
+
+    def test_unknown(self):
+        self.assertEqual(exe.identify(b"MZ\x90\x00"), "unknown")
+        with self.assertRaises(ValueError):
+            exe.read_executable(b"\x7fELF")
+
+
+class SonyFogTest(unittest.TestCase):
+    def test_libgs_fog_runs_from_df_over_5_to_df(self):
+        ident = [[fx.ONE, 0, 0], [0, fx.ONE, 0], [0, 0, fx.ONE]]
+        dqa, dqb = fx.libgs_fog_params(5000, 256)
+        ir0 = lambda z: fx.rtps((0, 0, 0), ident, (0, 0, z), 256, dqa=dqa, dqb=dqb)["ir0"]  # noqa: E731
+        self.assertEqual(ir0(900), 0)
+        self.assertGreater(ir0(2000), 0)
+        self.assertGreaterEqual(ir0(5000), 4090)
 
 
 class WorldgenTest(unittest.TestCase):

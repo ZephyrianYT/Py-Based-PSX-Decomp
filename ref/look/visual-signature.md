@@ -49,7 +49,9 @@ perspective mapping would interpolate `u/z, v/z, 1/z` and divide per pixel,
 which needs a per-pixel divider that the PS1 does not have.
 
 **How games reduced it**: They **subdivided** large polygons near the camera, so
-each piece covers fewer pixels and the error shrinks. The subdivision was often
+each piece covers fewer pixels and the error shrinks. Sony built this into
+libgs as an object attribute (automatic 2×2 up to 64×64 subdivision, "to
+reduce texture distortion"). See [`../sdk/net-yaroze.md`](../sdk/net-yaroze.md). The subdivision was often
 adaptive, so the subdivision level changing could itself be seen as a "pop".
 Artists also avoided long straight texture lines on floors.
 

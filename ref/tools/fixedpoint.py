@@ -203,6 +203,24 @@ def depth_cue_params(h: int, z_near: int, z_far: int) -> tuple[int, int]:
     return dqa, dqb
 
 
+def libgs_fog_params(df: int, h: int) -> tuple[int, int]:
+    """Sony's own recipe for GsFOGPARAM (Net Yaroze Library Reference):
+
+        dqa = -df * 4096 / 64 / h        dqb = 1.25 * 4096 * 4096
+
+    where ``df`` is the distance at which the fog is total. Working it through
+    the RTPS formula above (n = H/SZ * 65536):
+
+        IR0 = (dqb + dqa * n) >> 12 = 5120 - 1024 * df / SZ
+
+    so IR0 reaches 4096 (full fog) at SZ = df and 0 at SZ = df / 5: Sony's
+    fog always starts at one fifth of its end distance, and like every GTE
+    depth cue it is linear in 1/z, not in z. (Fog is only applied when the
+    library's light mode is 1; see GsSetLightMode.)
+    """
+    return int(-df * 4096 / 64 / h), int(1.25 * 4096 * 4096)
+
+
 def depth_cue(rgb: tuple[int, int, int], far_rgb: tuple[int, int, int], ir0: int) -> tuple[int, int, int]:
     """DPCS: interpolate an 8-bit colour toward the far colour by IR0/4096.
 

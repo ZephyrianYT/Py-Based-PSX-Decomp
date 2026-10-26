@@ -18,6 +18,11 @@
 | **TRosettaStone** (Tomb Raider format documentation, community) | TR rooms, sectors, portals, and floor data | High for TR formats | `world/world-building.md` |
 | **Qhimm wiki** (FF7 community documentation) | FF7 field files, walkmesh, models | High for FF7 formats | `world/world-building.md` |
 | **Developer interviews and post-mortems** (Insomniac on Spyro, Konami on Silent Hill, and others) | High-level design decisions | Medium. Interviews simplify. | Marked **[CASE]** |
+| **Net Yaroze manuals** (Sony, 1997): Start Up Guide, User's Guide, Library Reference, File Formats | libps/libgs API and frame loop, memory map, PS-X EXE `EXEC` structure, TIM, TMD, RSD, SEQ, VAG and VAB | High for formats and SDK behaviour. It has two errata in the TIM chapter (see `formats/tim.md`). | `formats/*.md`, `sdk/net-yaroze.md`. They carry Sony's confidentiality notices, so this folder summarises them and quotes no text. |
+| **SCEE Net Yaroze Programming FAQ** (1998) | Packet sizes, the GPU texture cache and queue, libps bugs, RSDLINK UVs | High (Sony's own answers) | `hardware/gpu.md`, `sdk/net-yaroze.md` |
+| **`github.com/gwald/netyaroze_demo`** | Mirror of the Net Yaroze manuals, plus SCEE demos, tutorials and member guides with their data | The **test corpus**: 556 TIM, 249 TMD, 19 RSD, 321 executables | `tools/validate.py` runs over it. None of its files are copied here. |
+| **`github.com/ChrisRx/psxsdk`** | Modern Go toolchain for the Net Yaroze, with converters tested against Sony's tools, a byte-exact rsdlink, ECOFF tooling, and documentation of the machine and the FAQ | High. An independent implementation that agrees with this folder's TMD layout rule and winding. | `formats/rsd.md` (rounding rules), `sdk/net-yaroze.md` |
+| **`netyaroze.com/Development/Toolchain`** | Community page on setting up the toolchain | **Not consulted**: the site was unreachable from the environment that wrote these docs | Follow it for current setup steps |
 | **This repository's tools** | Simulation | **[SIM]**. Illustrative only. | `tools/` |
 
 ## How to resolve disagreements

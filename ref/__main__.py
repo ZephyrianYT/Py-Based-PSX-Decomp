@@ -9,6 +9,9 @@ Commands:
     worldgen   generate terrain / dungeon OBJ+PNG  (ref/tools/worldgen.py)
     tim        inspect, convert or scan TIM files  (ref/tools/tim.py)
     tmd        inspect or OBJ-export TMD models    (ref/tools/tmd.py)
+    rsd        read / link Sony RSD text models    (ref/tools/rsd.py)
+    exe        identify PS-X EXE / ECOFF / CPE     (ref/tools/exe.py)
+    validate   check the tools on a folder of real files (ref/tools/validate.py)
     jitter     print the GTE vertex-jitter table   (ref/tools/fixedpoint.py)
     test       run the self-tests                  (ref/tests/)
     docs       list the reference documents        (ref/index.json)
@@ -57,6 +60,15 @@ def main(argv: list[str]) -> int:
     elif cmd == "tmd":
         from .tools import tmd
         tmd.main(rest)
+    elif cmd == "rsd":
+        from .tools import rsd
+        rsd.main(rest)
+    elif cmd == "exe":
+        from .tools import exe
+        exe.main(rest)
+    elif cmd == "validate":
+        from .tools import validate
+        validate.main(rest)
     elif cmd == "jitter":
         from .tools import fixedpoint
         fixedpoint._demo()

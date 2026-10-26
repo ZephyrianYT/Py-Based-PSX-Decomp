@@ -212,6 +212,17 @@ Rectangles (sprites) are not dithered. This pattern, combined with
 Together they act as a 1-bit stencil. Games used this for HUD protection,
 reflections, and drawing order tricks.
 
+## Throughput facts [HW] [SDK]
+
+| Fact | Value | Why it matters |
+|------|-------|----------------|
+| Texture cache | 2 KB. It covers a 64×64 area of a 4-bit texture, 64×32 of 8-bit, or 32×32 of 15-bit. | Small 4-bit textures draw fastest. Sony's FAQ quotes about 30% faster drawing from the cache. |
+| Packet sizes (with the OT tag) | F3 20 B · FT3 32 · F4 24 · FT4 40 · G3 28 · GT3 40 · G4 36 · GT4 52 · sprite about 24 | Size the per-frame packet buffer (two of them, for double buffering) from the scene's worst case |
+| Command queue | Up to 64 linked lists queued (one per `DrawOTag`/`LoadImage`/`StoreImage` call) | `DrawSync(0)` waits for the queue to drain |
+| Read-back latency | A `StoreImage` of the screen returns frame *N* while the CPU builds frame *N + 2* | Pixel-based collision detection is impractical. Games test collision in software. |
+
+Sources: psx-spx, and the Net Yaroze FAQ. See [`../sdk/net-yaroze.md`](../sdk/net-yaroze.md).
+
 ## Display output [HW]
 
 | Setting | Values |

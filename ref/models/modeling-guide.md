@@ -21,9 +21,24 @@
 | Primitive | Triangle or quad, flat or Gouraud, textured or not | Quads are cheaper per area (one packet, four vertices shared) |
 | Transform | 1.3.12 rotation matrix + 32-bit translation per part | Rigid parts animate cheaply |
 
-Screen Y grows **downward** on the PS1, and Sony's libgte samples and many
-engines treat −Y as "up" in model space. Check this before assuming an
-extracted model is upside down.
+### Axes and winding [FMT]
+
+Sony's model space (TMD, RSD, libgs) is **X right, Y down, Z away from the
+viewer**, so "up" is −Y. A polygon's front is the side from which its vertices
+run **clockwise** on screen. In the Net Yaroze sample models, 96% of lit
+polygons follow this rule (see [`../formats/tmd.md`](../formats/tmd.md#coordinates-and-winding-fmt)).
+When moving models to Y-up, counter-clockwise tools (Blender, glTF, OBJ), negate
+Y and **keep** the vertex order. The mirror already flips the winding.
+Check both before deciding an extracted model is upside down or inside out.
+
+### How models were authored [SDK]
+
+Sony's pipeline was: a 3D package → **RSD** text (PLY geometry, MAT materials,
+GRP groups) → **RSDLINK** → TMD, with textures as TIMs placed in VRAM by hand.
+`ref/tools/rsd.py` reproduces RSDLINK byte for byte. See [`../formats/rsd.md`](../formats/rsd.md).
+The Net Yaroze version of libps could not draw lines, 3D sprites,
+double-sided polygons or untextured Gouraud quads from a TMD, so its models
+avoid them.
 
 ## Typical budgets [TYP]
 
@@ -122,7 +137,7 @@ game logic, sorting, clipping and overdraw are included.
 5. Paint vertex colours for AO and baked light.
 6. Preview with the shaders in [`../look/shaders/`](../look/shaders/), or export
    to OBJ and render with `ref/tools/raster.py`.
-7. Optional: convert to TMD with `ref/tools/tmd.py` (`write_tmd`) to check that
+7. Optional: write RSD text and link it with `python -m ref rsd tmd`, or build a TMD with `ref/tools/tmd.py` (`write_tmd`), to check that
    it fits the format's limits.
 
 ## Inspecting an extracted model (checklist)
